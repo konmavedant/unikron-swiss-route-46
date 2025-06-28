@@ -1,39 +1,85 @@
 
+import { useEffect } from "react";
 import { motion } from "framer-motion";
-import { Clock, DollarSign, Shield, ArrowRight } from "lucide-react";
+import { Clock, DollarSign, Shield, ArrowRight, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { usePrices } from "@/hooks/usePrices";
 
 interface RoutePreviewProps {
-  fromToken: { symbol: string; chain: string };
-  toToken: { symbol: string; chain: string };
+  fromToken: { symbol: string; chain: string; id?: string };
+  toToken: { symbol: string; chain: string; id?: string };
   amount: string;
   isCrossChain: boolean;
 }
 
 const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreviewProps) => {
-  const mockRate = amount ? (parseFloat(amount) * 3425).toFixed(2) : "0.00";
+  const { getPriceData, fetchPrices, loading } = usePrices([fromToken.symbol, toToken.symbol]);
+  
+  const fromPriceData = getPriceData(fromToken.symbol);
+  const toPriceData = getPriceData(toToken.symbol);
+
+  useEffect(() => {
+    const symbols = [fromToken.symbol, toToken.symbol].filter(Boolean);
+    if (symbols.length > 0) {
+      fetchPrices(symbols);
+    }
+  }, [fromToken.symbol, toToken.symbol, fetchPrices]);
+
+  const exchangeRate = fromPriceData && toPriceData ? 
+    (fromPriceData.price / toPriceData.price) : 0;
+
+  const estimatedOutput = amount && exchangeRate ? 
+    (parseFloat(amount) * exchangeRate).toFixed(6) : "0.00";
+
   const mockFees = amount ? (parseFloat(amount) * 0.005).toFixed(4) : "0.0000";
   const bridgeFee = isCrossChain ? "0.25" : "0.00";
+
+  const handleRefresh = () => {
+    fetchPrices([fromToken.symbol, toToken.symbol]);
+  };
   
   return (
     <div className="space-y-6">
       {/* Rate Preview */}
       <Card className="swiss-card">
         <CardHeader>
-          <CardTitle className="text-xl font-semibold text-gray-900 flex items-center">
-            Exchange Rate
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xl font-semibold text-gray-900">
+              Live Exchange Rate
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-center py-4">
-            <div className="text-3xl font-bold text-gray-900 mb-2">
-              1 {fromToken.symbol} ≈ 3,425 {toToken.symbol}
-            </div>
-            <p className="text-gray-600">Current market rate</p>
+            {loading ? (
+              <div className="text-xl text-gray-500">Loading rates...</div>
+            ) : exchangeRate ? (
+              <>
+                <div className="text-3xl font-bold text-gray-900 mb-2">
+                  1 {fromToken.symbol} ≈ {exchangeRate.toFixed(6)} {toToken.symbol}
+                </div>
+                <div className="text-sm text-gray-500 space-y-1">
+                  <div>{fromToken.symbol}: ${fromPriceData?.price.toFixed(4)}</div>
+                  <div>{toToken.symbol}: ${toPriceData?.price.toFixed(4)}</div>
+                </div>
+              </>
+            ) : (
+              <div className="text-xl text-gray-500">Unable to fetch rates</div>
+            )}
           </div>
           
-          {amount && (
+          {amount && exchangeRate && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -42,9 +88,14 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">You'll receive approximately:</span>
                 <span className="text-xl font-semibold text-gray-900">
-                  {mockRate} {toToken.symbol}
+                  {estimatedOutput} {toToken.symbol}
                 </span>
               </div>
+              {fromPriceData && (
+                <div className="text-sm text-gray-500 mt-1">
+                  ≈ ${(parseFloat(amount) * fromPriceData.price).toFixed(2)} USD
+                </div>
+              )}
             </motion.div>
           )}
         </CardContent>

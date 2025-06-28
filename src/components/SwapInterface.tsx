@@ -1,8 +1,10 @@
 
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { usePrices } from "@/hooks/usePrices";
 
 interface SwapInterfaceProps {
   amount: string;
@@ -11,6 +13,7 @@ interface SwapInterfaceProps {
   onRecipientChange: (address: string) => void;
   isCrossChain: boolean;
   isConnected: boolean;
+  fromToken: { symbol: string; chain: string; balance: string; id?: string };
 }
 
 const SwapInterface = ({
@@ -19,11 +22,24 @@ const SwapInterface = ({
   recipientAddress,
   onRecipientChange,
   isCrossChain,
-  isConnected
+  isConnected,
+  fromToken
 }: SwapInterfaceProps) => {
+  const { getPriceData, fetchPrices } = usePrices([fromToken.symbol]);
+  const priceData = getPriceData(fromToken.symbol);
+
+  useEffect(() => {
+    if (fromToken.symbol) {
+      fetchPrices([fromToken.symbol]);
+    }
+  }, [fromToken.symbol, fetchPrices]);
+
   const handleMaxClick = () => {
-    onAmountChange("2.5"); // Mock max balance
+    onAmountChange(fromToken.balance || "2.5");
   };
+
+  const usdValue = amount && priceData ? 
+    (parseFloat(amount) * priceData.price).toFixed(2) : "0.00";
 
   return (
     <div className="space-y-4">
@@ -49,6 +65,11 @@ const SwapInterface = ({
               MAX
             </Button>
           </div>
+          {amount && priceData && (
+            <div className="mt-2 text-sm text-gray-500">
+              ≈ ${usdValue} USD
+            </div>
+          )}
         </CardContent>
       </Card>
 

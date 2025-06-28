@@ -13,8 +13,18 @@ import WalletConnector from "@/components/WalletConnector";
 
 const RoutingApp = () => {
   const [isCrossChain, setIsCrossChain] = useState(true);
-  const [fromToken, setFromToken] = useState({ symbol: "ETH", chain: "Ethereum", balance: "2.5" });
-  const [toToken, setToToken] = useState({ symbol: "USDC", chain: "Polygon", balance: "0" });
+  const [fromToken, setFromToken] = useState({ 
+    symbol: "ETH", 
+    chain: "Ethereum", 
+    balance: "2.5",
+    id: "ethereum"
+  });
+  const [toToken, setToToken] = useState({ 
+    symbol: "USDC", 
+    chain: "Polygon", 
+    balance: "0",
+    id: "usd-coin"
+  });
   const [amount, setAmount] = useState("");
   const [recipientAddress, setRecipientAddress] = useState("");
   const [isConnected, setIsConnected] = useState(false);
@@ -69,7 +79,7 @@ const RoutingApp = () => {
                   </div>
                 </div>
                 <p className="text-gray-600">
-                  {isCrossChain ? "Route assets across multiple blockchain networks" : "Same-chain routing"}
+                  {isCrossChain ? "Route assets across multiple blockchain networks with live pricing" : "Same-chain routing with live pricing"}
                 </p>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -109,6 +119,7 @@ const RoutingApp = () => {
                   onRecipientChange={setRecipientAddress}
                   isCrossChain={isCrossChain}
                   isConnected={isConnected}
+                  fromToken={fromToken}
                 />
               </CardContent>
             </Card>
