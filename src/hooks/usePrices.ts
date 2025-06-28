@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { priceService, CoinCapAsset } from '@/services/priceService';
 
 interface PriceData {
@@ -11,28 +11,62 @@ interface PriceData {
   };
 }
 
+const PRICE_CACHE_DURATION = 30000; // 30 seconds
+const globalPriceCache = new Map<string, { data: PriceData[string], timestamp: number }>();
+
 export const usePrices = (symbols: string[] = []) => {
   const [prices, setPrices] = useState<PriceData>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastFetchRef = useRef<number>(0);
 
-  const fetchPrices = useCallback(async (symbolsToFetch: string[]) => {
+  const fetchPrices = useCallback(async (symbolsToFetch: string[], force = false) => {
     if (symbolsToFetch.length === 0) return;
+
+    const now = Date.now();
+    
+    // Check if we should skip fetching based on cache
+    if (!force && now - lastFetchRef.current < PRICE_CACHE_DURATION) {
+      // Use cached data if available
+      const cachedPrices: PriceData = {};
+      let hasValidCache = true;
+      
+      for (const symbol of symbolsToFetch) {
+        const cached = globalPriceCache.get(symbol);
+        if (cached && now - cached.timestamp < PRICE_CACHE_DURATION) {
+          cachedPrices[symbol] = cached.data;
+        } else {
+          hasValidCache = false;
+          break;
+        }
+      }
+      
+      if (hasValidCache && Object.keys(cachedPrices).length > 0) {
+        setPrices(prev => ({ ...prev, ...cachedPrices }));
+        return;
+      }
+    }
 
     setLoading(true);
     setError(null);
+    lastFetchRef.current = now;
 
     try {
       const assets = await priceService.getMultipleAssets(symbolsToFetch);
       const newPrices: PriceData = {};
 
       assets.forEach(asset => {
-        newPrices[asset.symbol] = {
+        const priceData = {
           price: parseFloat(asset.priceUsd),
           change24h: parseFloat(asset.changePercent24Hr),
-          lastUpdated: Date.now(),
+          lastUpdated: now,
           asset: asset
         };
+        
+        newPrices[asset.symbol] = priceData;
+        // Update global cache
+        globalPriceCache.set(asset.symbol, { data: priceData, timestamp: now });
       });
 
       setPrices(prev => ({ ...prev, ...newPrices }));
@@ -44,14 +78,34 @@ export const usePrices = (symbols: string[] = []) => {
     }
   }, []);
 
+  // Initial fetch and setup interval
   useEffect(() => {
-    if (symbols.length > 0) {
-      fetchPrices(symbols);
+    if (symbols.length === 0) return;
+
+    // Clear existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
     }
-  }, [symbols, fetchPrices]);
+
+    // Initial fetch
+    fetchPrices(symbols);
+
+    // Set up interval for subsequent fetches
+    intervalRef.current = setInterval(() => {
+      fetchPrices(symbols, true);
+    }, PRICE_CACHE_DURATION);
+
+    // Cleanup interval on unmount or dependency change
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [symbols.join(','), fetchPrices]); // Use symbols.join(',') to avoid infinite re-renders
 
   const refreshPrices = useCallback(() => {
-    fetchPrices(symbols);
+    fetchPrices(symbols, true);
   }, [symbols, fetchPrices]);
 
   const getPriceData = useCallback((symbol: string) => {

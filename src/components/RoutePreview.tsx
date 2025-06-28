@@ -1,5 +1,5 @@
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Clock, DollarSign, Shield, ArrowRight, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,29 +15,30 @@ interface RoutePreviewProps {
 }
 
 const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreviewProps) => {
-  const { getPriceData, fetchPrices, loading } = usePrices([fromToken.symbol, toToken.symbol]);
+  const symbols = useMemo(() => [fromToken.symbol, toToken.symbol], [fromToken.symbol, toToken.symbol]);
+  const { getPriceData, refreshPrices, loading } = usePrices(symbols);
   
   const fromPriceData = getPriceData(fromToken.symbol);
   const toPriceData = getPriceData(toToken.symbol);
 
-  useEffect(() => {
-    const symbols = [fromToken.symbol, toToken.symbol].filter(Boolean);
-    if (symbols.length > 0) {
-      fetchPrices(symbols);
-    }
-  }, [fromToken.symbol, toToken.symbol, fetchPrices]);
+  const exchangeRate = useMemo(() => {
+    return fromPriceData && toPriceData ? 
+      (fromPriceData.price / toPriceData.price) : 0;
+  }, [fromPriceData?.price, toPriceData?.price]);
 
-  const exchangeRate = fromPriceData && toPriceData ? 
-    (fromPriceData.price / toPriceData.price) : 0;
+  const estimatedOutput = useMemo(() => {
+    return amount && exchangeRate ? 
+      (parseFloat(amount) * exchangeRate).toFixed(6) : "0.00";
+  }, [amount, exchangeRate]);
 
-  const estimatedOutput = amount && exchangeRate ? 
-    (parseFloat(amount) * exchangeRate).toFixed(6) : "0.00";
+  const mockFees = useMemo(() => {
+    return amount ? (parseFloat(amount) * 0.005).toFixed(4) : "0.0000";
+  }, [amount]);
 
-  const mockFees = amount ? (parseFloat(amount) * 0.005).toFixed(4) : "0.0000";
   const bridgeFee = isCrossChain ? "0.25" : "0.00";
 
   const handleRefresh = () => {
-    fetchPrices([fromToken.symbol, toToken.symbol]);
+    refreshPrices();
   };
   
   return (
@@ -62,9 +63,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-center py-4">
-            {loading ? (
-              <div className="text-xl text-gray-500">Loading rates...</div>
-            ) : exchangeRate ? (
+            {exchangeRate ? (
               <>
                 <div className="text-3xl font-bold text-gray-900 mb-2">
                   1 {fromToken.symbol} ≈ {exchangeRate.toFixed(6)} {toToken.symbol}
@@ -75,7 +74,9 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
                 </div>
               </>
             ) : (
-              <div className="text-xl text-gray-500">Unable to fetch rates</div>
+              <div className="text-xl text-gray-500">
+                {loading ? "Loading rates..." : "Unable to fetch rates"}
+              </div>
             )}
           </div>
           

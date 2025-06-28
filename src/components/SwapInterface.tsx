@@ -1,5 +1,5 @@
 
-import { useEffect } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,21 +25,18 @@ const SwapInterface = ({
   isConnected,
   fromToken
 }: SwapInterfaceProps) => {
-  const { getPriceData, fetchPrices } = usePrices([fromToken.symbol]);
+  const symbols = useMemo(() => [fromToken.symbol], [fromToken.symbol]);
+  const { getPriceData } = usePrices(symbols);
   const priceData = getPriceData(fromToken.symbol);
-
-  useEffect(() => {
-    if (fromToken.symbol) {
-      fetchPrices([fromToken.symbol]);
-    }
-  }, [fromToken.symbol, fetchPrices]);
 
   const handleMaxClick = () => {
     onAmountChange(fromToken.balance || "2.5");
   };
 
-  const usdValue = amount && priceData ? 
-    (parseFloat(amount) * priceData.price).toFixed(2) : "0.00";
+  const usdValue = useMemo(() => {
+    return amount && priceData ? 
+      (parseFloat(amount) * priceData.price).toFixed(2) : "0.00";
+  }, [amount, priceData?.price]);
 
   return (
     <div className="space-y-4">
