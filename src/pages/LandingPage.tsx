@@ -60,7 +60,7 @@ const LandingPage = () => {
             className="text-center max-w-4xl mx-auto"
           >
             <h1 className="text-5xl md:text-7xl font-bold text-gray-900 mb-6 leading-tight">
-              Swiss Engineered
+              The Institutional DeFi
               <br />
               <span className="text-unikron-blue">for Trust</span>
             </h1>
