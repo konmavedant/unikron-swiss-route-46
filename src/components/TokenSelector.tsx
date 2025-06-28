@@ -35,12 +35,52 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
   const { getPriceData, loading: priceLoading } = usePrices([token.symbol]);
 
   const defaultTokens: Token[] = [
-    { symbol: "ETH", name: "Ethereum", chain: "Ethereum", icon: "🔷", id: "ethereum" },
+    // Major cryptocurrencies
     { symbol: "BTC", name: "Bitcoin", chain: "Bitcoin", icon: "₿", id: "bitcoin" },
-    { symbol: "USDC", name: "USD Coin", chain: "Ethereum", icon: "💵", id: "usd-coin" },
-    { symbol: "USDC", name: "USD Coin", chain: "Polygon", icon: "💵", id: "usd-coin" },
+    { symbol: "ETH", name: "Ethereum", chain: "Ethereum", icon: "🔷", id: "ethereum" },
+    { symbol: "BNB", name: "BNB", chain: "BSC", icon: "🟡", id: "binancecoin" },
+    { symbol: "XRP", name: "XRP", chain: "XRP Ledger", icon: "💧", id: "ripple" },
+    { symbol: "ADA", name: "Cardano", chain: "Cardano", icon: "🔵", id: "cardano" },
     { symbol: "SOL", name: "Solana", chain: "Solana", icon: "🌞", id: "solana" },
+    { symbol: "DOT", name: "Polkadot", chain: "Polkadot", icon: "🔴", id: "polkadot" },
+    { symbol: "DOGE", name: "Dogecoin", chain: "Dogecoin", icon: "🐕", id: "dogecoin" },
+    { symbol: "AVAX", name: "Avalanche", chain: "Avalanche", icon: "🔺", id: "avalanche-2" },
+    { symbol: "MATIC", name: "Polygon", chain: "Polygon", icon: "🟣", id: "matic-network" },
+    { symbol: "SHIB", name: "Shiba Inu", chain: "Ethereum", icon: "🐕‍🦺", id: "shiba-inu" },
+    { symbol: "LTC", name: "Litecoin", chain: "Litecoin", icon: "🥈", id: "litecoin" },
+    { symbol: "UNI", name: "Uniswap", chain: "Ethereum", icon: "🦄", id: "uniswap" },
+    { symbol: "LINK", name: "Chainlink", chain: "Ethereum", icon: "🔗", id: "chainlink" },
+    { symbol: "ATOM", name: "Cosmos", chain: "Cosmos", icon: "⚛️", id: "cosmos" },
+    
+    // Stablecoins across different chains
+    { symbol: "USDT", name: "Tether", chain: "Ethereum", icon: "💚", id: "tether" },
+    { symbol: "USDT", name: "Tether", chain: "BSC", icon: "💚", id: "tether" },
+    { symbol: "USDT", name: "Tether", chain: "Polygon", icon: "💚", id: "tether" },
+    { symbol: "USDT", name: "Tether", chain: "Solana", icon: "💚", id: "tether" },
+    { symbol: "USDC", name: "USD Coin", chain: "Ethereum", icon: "💵", id: "usd-coin" },
+    { symbol: "USDC", name: "USD Coin", chain: "BSC", icon: "💵", id: "usd-coin" },
+    { symbol: "USDC", name: "USD Coin", chain: "Polygon", icon: "💵", id: "usd-coin" },
     { symbol: "USDC", name: "USD Coin", chain: "Solana", icon: "💵", id: "usd-coin" },
+    { symbol: "USDC", name: "USD Coin", chain: "Avalanche", icon: "💵", id: "usd-coin" },
+    { symbol: "BUSD", name: "Binance USD", chain: "BSC", icon: "💛", id: "binance-usd" },
+    { symbol: "DAI", name: "Dai", chain: "Ethereum", icon: "💸", id: "dai" },
+    
+    // Layer 2 and other popular tokens
+    { symbol: "WETH", name: "Wrapped Ethereum", chain: "Ethereum", icon: "🔷", id: "weth" },
+    { symbol: "WBTC", name: "Wrapped Bitcoin", chain: "Ethereum", icon: "₿", id: "wrapped-bitcoin" },
+    { symbol: "CRO", name: "Cronos", chain: "Cronos", icon: "🔵", id: "crypto-com-chain" },
+    { symbol: "FTM", name: "Fantom", chain: "Fantom", icon: "👻", id: "fantom" },
+    { symbol: "NEAR", name: "NEAR Protocol", chain: "NEAR", icon: "🌟", id: "near" },
+    { symbol: "ICP", name: "Internet Computer", chain: "ICP", icon: "♾️", id: "internet-computer" },
+    { symbol: "VET", name: "VeChain", chain: "VeChain", icon: "✅", id: "vechain" },
+    { symbol: "ALGO", name: "Algorand", chain: "Algorand", icon: "◯", id: "algorand" },
+    { symbol: "XLM", name: "Stellar", chain: "Stellar", icon: "🌟", id: "stellar" },
+    { symbol: "HBAR", name: "Hedera", chain: "Hedera", icon: "♦️", id: "hedera-hashgraph" },
+    { symbol: "FLOW", name: "Flow", chain: "Flow", icon: "🌊", id: "flow" },
+    { symbol: "SAND", name: "The Sandbox", chain: "Ethereum", icon: "🏖️", id: "the-sandbox" },
+    { symbol: "MANA", name: "Decentraland", chain: "Ethereum", icon: "🏢", id: "decentraland" },
+    { symbol: "AXS", name: "Axie Infinity", chain: "Ethereum", icon: "🎮", id: "axie-infinity" },
+    { symbol: "APE", name: "ApeCoin", chain: "Ethereum", icon: "🐒", id: "apecoin" },
   ];
 
   const handleSearch = async (query: string) => {

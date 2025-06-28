@@ -11,15 +11,22 @@ import SwapInterface from "@/components/SwapInterface";
 import RoutePreview from "@/components/RoutePreview";
 import WalletConnector from "@/components/WalletConnector";
 
+interface TokenType {
+  symbol: string;
+  chain: string;
+  balance: string;
+  id?: string;
+}
+
 const RoutingApp = () => {
   const [isCrossChain, setIsCrossChain] = useState(true);
-  const [fromToken, setFromToken] = useState({ 
+  const [fromToken, setFromToken] = useState<TokenType>({ 
     symbol: "ETH", 
     chain: "Ethereum", 
     balance: "2.5",
     id: "ethereum"
   });
-  const [toToken, setToToken] = useState({ 
+  const [toToken, setToToken] = useState<TokenType>({ 
     symbol: "USDC", 
     chain: "Polygon", 
     balance: "0",
@@ -28,6 +35,14 @@ const RoutingApp = () => {
   const [amount, setAmount] = useState("");
   const [recipientAddress, setRecipientAddress] = useState("");
   const [isConnected, setIsConnected] = useState(false);
+
+  const handleFromTokenChange = (token: TokenType) => {
+    setFromToken(token);
+  };
+
+  const handleToTokenChange = (token: TokenType) => {
+    setToToken(token);
+  };
 
   return (
     <div className="min-h-screen bg-unikron-gray">
@@ -86,7 +101,7 @@ const RoutingApp = () => {
                 <TokenSelector
                   label="From"
                   token={fromToken}
-                  onTokenChange={setFromToken}
+                  onTokenChange={handleFromTokenChange}
                   showBalance={true}
                 />
                 
@@ -108,7 +123,7 @@ const RoutingApp = () => {
                 <TokenSelector
                   label="To"
                   token={toToken}
-                  onTokenChange={setToToken}
+                  onTokenChange={handleToTokenChange}
                   showBalance={false}
                 />
 

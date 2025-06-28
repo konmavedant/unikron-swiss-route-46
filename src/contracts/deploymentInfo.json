@@ -1,0 +1,27 @@
+
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "contracts": {
+    "UnikronSwapRouter": {
+      "address": "0x0000000000000000000000000000000000000000",
+      "deploymentBlock": 0,
+      "deploymentTx": "",
+      "verified": false
+    }
+  },
+  "tokens": {
+    "WETH": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+    "USDC": "0x0000000000000000000000000000000000000000"
+  },
+  "externalContracts": {
+    "UniswapV2Router": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+  },
+  "deployment": {
+    "timestamp": "",
+    "deployer": "",
+    "gasUsed": 0,
+    "gasPrice": "",
+    "notes": "Update this file after deployment with actual values"
+  }
+}
