@@ -6,7 +6,7 @@ const RouteFlowVisual = () => {
   const steps = [
     { icon: Wallet, label: "Your Wallet", color: "bg-green-500" },
     { icon: Shield, label: "UNIKRON Router", color: "bg-unikron-blue" },
-    { icon: Globe, label: "Stargate Bridge", color: "bg-purple-500" },
+    { icon: Globe, label: "Cross-Chain Bridge", color: "bg-purple-500" },
     { icon: Wallet, label: "Recipient", color: "bg-orange-500" }
   ];
 

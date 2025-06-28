@@ -88,7 +88,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
             
             {isCrossChain && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Stargate Bridge Fee</span>
+                <span className="text-gray-600">Cross-Chain Bridge Fee</span>
                 <span className="text-gray-900">{bridgeFee} USDC</span>
               </div>
             )}

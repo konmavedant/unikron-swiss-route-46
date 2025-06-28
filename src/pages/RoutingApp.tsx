@@ -69,7 +69,7 @@ const RoutingApp = () => {
                   </div>
                 </div>
                 <p className="text-gray-600">
-                  {isCrossChain ? "Route assets across chains via Stargate" : "Same-chain routing"}
+                  {isCrossChain ? "Route assets across multiple blockchain networks" : "Same-chain routing"}
                 </p>
               </CardHeader>
               <CardContent className="space-y-6">
