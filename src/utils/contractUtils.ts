@@ -1,4 +1,4 @@
-import { parseUnits, formatUnits } from 'viem';
+import { parseUnits as viemParseUnits, formatUnits as viemFormatUnits } from 'viem';
 
 // Sepolia Testnet Configuration
 export const SEPOLIA_ADDRESSES = {
@@ -92,11 +92,11 @@ export const getDeadline = (minutesFromNow: number = 20): bigint => {
 };
 
 export const parseUnits = (value: string, decimals: number = 18): bigint => {
-  return parseUnits(value, decimals);
+  return viemParseUnits(value, decimals);
 };
 
 export const formatUnits = (value: bigint, decimals: number = 18): string => {
-  return formatUnits(value, decimals);
+  return viemFormatUnits(value, decimals);
 };
 
 export const calculateMinAmountOut = (amount: string, slippagePercent: number): string => {
