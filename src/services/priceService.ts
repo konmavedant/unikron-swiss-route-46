@@ -1,4 +1,3 @@
-
 import { dexScreenerService, DexScreenerPair } from './dexScreenerService';
 
 interface CoinGeckoResponse {
@@ -344,4 +343,3 @@ class PriceService {
 }
 
 export const priceService = new PriceService();
-export type { CoinCapAsset };
