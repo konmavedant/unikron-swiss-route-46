@@ -8,6 +8,19 @@ interface PriceData {
     change24h: number;
     lastUpdated: number;
     asset: CoinCapAsset;
+    liquidity?: {
+      usd: number;
+      base: number;
+      quote: number;
+    };
+    volume?: {
+      h1: number;
+      h24: number;
+    };
+    txns?: {
+      h1: { buys: number; sells: number };
+      h24: { buys: number; sells: number };
+    };
   };
 }
 
@@ -61,7 +74,10 @@ export const usePrices = (symbols: string[] = []) => {
           price: parseFloat(asset.priceUsd),
           change24h: parseFloat(asset.changePercent24Hr),
           lastUpdated: now,
-          asset: asset
+          asset: asset,
+          liquidity: asset.liquidity,
+          volume: asset.volume,
+          txns: asset.txns
         };
         
         newPrices[asset.symbol] = priceData;
@@ -112,12 +128,30 @@ export const usePrices = (symbols: string[] = []) => {
     return prices[symbol] || null;
   }, [prices]);
 
+  const getLiquidityInfo = useCallback((symbol: string) => {
+    const priceData = prices[symbol];
+    return priceData?.liquidity || null;
+  }, [prices]);
+
+  const getVolumeInfo = useCallback((symbol: string) => {
+    const priceData = prices[symbol];
+    return priceData?.volume || null;
+  }, [prices]);
+
+  const getTradingActivity = useCallback((symbol: string) => {
+    const priceData = prices[symbol];
+    return priceData?.txns || null;
+  }, [prices]);
+
   return {
     prices,
     loading,
     error,
     refreshPrices,
     getPriceData,
+    getLiquidityInfo,
+    getVolumeInfo,
+    getTradingActivity,
     fetchPrices
   };
 };

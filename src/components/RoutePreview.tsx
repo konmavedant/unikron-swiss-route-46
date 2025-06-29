@@ -1,10 +1,11 @@
 
 import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Clock, DollarSign, Shield, ArrowRight, RefreshCw } from "lucide-react";
+import { Clock, DollarSign, Shield, ArrowRight, RefreshCw, TrendingUp, Activity, Droplets } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { usePrices } from "@/hooks/usePrices";
 
 interface RoutePreviewProps {
@@ -16,10 +17,14 @@ interface RoutePreviewProps {
 
 const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreviewProps) => {
   const symbols = useMemo(() => [fromToken.symbol, toToken.symbol], [fromToken.symbol, toToken.symbol]);
-  const { getPriceData, refreshPrices, loading } = usePrices(symbols);
+  const { getPriceData, getLiquidityInfo, getVolumeInfo, getTradingActivity, refreshPrices, loading } = usePrices(symbols);
   
   const fromPriceData = getPriceData(fromToken.symbol);
   const toPriceData = getPriceData(toToken.symbol);
+  const fromLiquidityInfo = getLiquidityInfo(fromToken.symbol);
+  const toLiquidityInfo = getLiquidityInfo(toToken.symbol);
+  const fromVolumeInfo = getVolumeInfo(fromToken.symbol);
+  const toVolumeInfo = getVolumeInfo(toToken.symbol);
 
   const exchangeRate = useMemo(() => {
     return fromPriceData && toPriceData ? 
@@ -36,6 +41,24 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
   }, [amount]);
 
   const bridgeFee = isCrossChain ? "0.25" : "0.00";
+
+  const formatVolume = (volume: number) => {
+    if (volume >= 1000000) {
+      return `$${(volume / 1000000).toFixed(1)}M`;
+    } else if (volume >= 1000) {
+      return `$${(volume / 1000).toFixed(1)}K`;
+    }
+    return `$${volume.toFixed(0)}`;
+  };
+
+  const formatLiquidity = (liquidity: number) => {
+    if (liquidity >= 1000000) {
+      return `$${(liquidity / 1000000).toFixed(1)}M`;
+    } else if (liquidity >= 1000) {
+      return `$${(liquidity / 1000).toFixed(1)}K`;
+    }
+    return `$${liquidity.toFixed(0)}`;
+  };
 
   const handleRefresh = () => {
     refreshPrices();
@@ -69,8 +92,10 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
                   1 {fromToken.symbol} ≈ {exchangeRate.toFixed(6)} {toToken.symbol}
                 </div>
                 <div className="text-sm text-gray-500 space-y-1">
-                  <div>{fromToken.symbol}: ${fromPriceData?.price.toFixed(4)}</div>
-                  <div>{toToken.symbol}: ${toPriceData?.price.toFixed(4)}</div>
+                  <div className="flex items-center justify-center space-x-4">
+                    <span>{fromToken.symbol}: ${fromPriceData?.price.toFixed(4)}</span>
+                    <span>{toToken.symbol}: ${toPriceData?.price.toFixed(4)}</span>
+                  </div>
                 </div>
               </>
             ) : (
@@ -79,6 +104,36 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
               </div>
             )}
           </div>
+          
+          {/* Enhanced Market Data */}
+          {(fromLiquidityInfo || fromVolumeInfo) && (
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              {fromLiquidityInfo && (
+                <div className="text-center p-3 bg-blue-50 rounded-lg">
+                  <div className="flex items-center justify-center space-x-1 text-blue-600 mb-1">
+                    <Droplets className="h-4 w-4" />
+                    <span className="text-xs font-medium">Liquidity</span>
+                  </div>
+                  <div className="text-sm font-semibold">
+                    {formatLiquidity(fromLiquidityInfo.usd)}
+                  </div>
+                  <div className="text-xs text-gray-600">{fromToken.symbol}</div>
+                </div>
+              )}
+              {fromVolumeInfo && (
+                <div className="text-center p-3 bg-green-50 rounded-lg">
+                  <div className="flex items-center justify-center space-x-1 text-green-600 mb-1">
+                    <Activity className="h-4 w-4" />
+                    <span className="text-xs font-medium">24h Volume</span>
+                  </div>
+                  <div className="text-sm font-semibold">
+                    {formatVolume(fromVolumeInfo.h24)}
+                  </div>
+                  <div className="text-xs text-gray-600">{fromToken.symbol}</div>
+                </div>
+              )}
+            </div>
+          )}
           
           {amount && exchangeRate && (
             <motion.div
@@ -125,8 +180,32 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
               <Shield className="h-4 w-4 text-green-500" />
               <span className="text-gray-600">MEV Protection</span>
             </div>
-            <span className="font-medium text-green-600">Active</span>
+            <Badge variant="secondary" className="bg-green-100 text-green-700">
+              Active
+            </Badge>
           </div>
+
+          {/* Market Quality Indicators */}
+          {(fromLiquidityInfo || toLiquidityInfo) && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <TrendingUp className="h-4 w-4 text-blue-500" />
+                <span className="text-gray-600">Market Quality</span>
+              </div>
+              <div className="flex space-x-2">
+                {fromLiquidityInfo && fromLiquidityInfo.usd > 100000 && (
+                  <Badge variant="secondary" className="bg-green-100 text-green-700">
+                    High Liquidity
+                  </Badge>
+                )}
+                {fromVolumeInfo && fromVolumeInfo.h24 > 50000 && (
+                  <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                    Active Trading
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
 
           <Separator />
 
