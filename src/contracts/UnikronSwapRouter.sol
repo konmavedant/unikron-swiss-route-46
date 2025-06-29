@@ -24,6 +24,18 @@ contract UnikronSwapRouter {
     address public constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238; // Sepolia USDC (if available)
     address public constant SEPOLIA_DAI = 0x3e622317f8C93f7328350cF0B56d9eD4C620C5d6; // Sepolia DAI (if available)
     
+    // Struct to group swap parameters and reduce stack depth
+    struct SwapParams {
+        uint256 amountIn;
+        uint256 amountOutMin;
+        address[] path;
+        address to;
+        uint256 deadline;
+        uint256 slippageBps;
+        uint256 feeAmount;
+        uint256 swapAmount;
+    }
+    
     event SwapExecuted(
         address indexed user,
         address indexed tokenIn,
@@ -105,36 +117,53 @@ contract UnikronSwapRouter {
         IERC20(tokenIn).approve(UNISWAP_V2_ROUTER, swapAmount);
     }
     
-    // Helper function to calculate and check slippage
-    function _calculateAndCheckSlippage(
-        uint256 expectedAmount,
-        uint256 actualAmount,
-        uint256 slippageBps
-    ) private returns (uint256 actualSlippage) {
-        if (expectedAmount > actualAmount) {
-            actualSlippage = ((expectedAmount - actualAmount) * FEE_DENOMINATOR) / expectedAmount;
+    // Consolidated swap execution helper function
+    function _executeSwapWithSlippage(SwapParams memory params) 
+        private 
+        returns (uint256[] memory amounts, uint256 actualSlippage) 
+    {
+        // Get expected amounts for slippage calculation
+        uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(params.swapAmount, params.path);
+        uint256 expectedOutput = expectedAmounts[expectedAmounts.length - 1];
+        
+        // Calculate minimum amount out
+        uint256 minAmountOut = calculateMinAmountOut(expectedOutput, params.slippageBps);
+        uint256 finalMinAmountOut = params.amountOutMin > minAmountOut ? params.amountOutMin : minAmountOut;
+        
+        // Execute swap
+        amounts = uniswapRouter.swapExactTokensForTokens(
+            params.swapAmount,
+            finalMinAmountOut,
+            params.path,
+            params.to,
+            params.deadline
+        );
+        
+        // Calculate actual slippage
+        if (expectedOutput > amounts[amounts.length - 1]) {
+            actualSlippage = ((expectedOutput - amounts[amounts.length - 1]) * FEE_DENOMINATOR) / expectedOutput;
         } else {
             actualSlippage = 0;
         }
         
-        if (actualSlippage > slippageBps) {
-            emit SlippageExceeded(msg.sender, expectedAmount, actualAmount);
+        // Check if slippage exceeded tolerance
+        if (actualSlippage > params.slippageBps) {
+            emit SlippageExceeded(msg.sender, expectedOutput, amounts[amounts.length - 1]);
         }
+        
+        // Emit swap executed event
+        emit SwapExecuted(
+            msg.sender, 
+            params.path[0], 
+            params.path[params.path.length - 1], 
+            params.amountIn, 
+            amounts[amounts.length - 1], 
+            params.feeAmount, 
+            actualSlippage
+        );
     }
     
-    // Helper function to prepare swap parameters
-    function _prepareSwapParams(
-        uint256 swapAmount,
-        uint256 amountOutMin,
-        address[] calldata path,
-        uint256 slippageBps
-    ) private view returns (uint256 finalMinAmountOut) {
-        uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(swapAmount, path);
-        uint256 minAmountOut = calculateMinAmountOut(expectedAmounts[expectedAmounts.length - 1], slippageBps);
-        finalMinAmountOut = amountOutMin > minAmountOut ? amountOutMin : minAmountOut;
-    }
-    
-    // Enhanced swap function with slippage protection (refactored to avoid stack too deep)
+    // Enhanced swap function with slippage protection (optimized to avoid stack too deep)
     function swapExactTokensForTokensWithSlippage(
         uint256 amountIn,
         uint256 amountOutMin,
@@ -152,40 +181,23 @@ contract UnikronSwapRouter {
         require(amountIn > 0, "Amount must be greater than 0");
         require(deadline >= block.timestamp, "Transaction expired");
         
-        // Calculate fee and swap amounts
-        (uint256 feeAmount, uint256 swapAmount) = _calculateFeeAndSwapAmount(amountIn);
+        // Create swap parameters struct
+        SwapParams memory params;
+        params.amountIn = amountIn;
+        params.amountOutMin = amountOutMin;
+        params.path = path;
+        params.to = to;
+        params.deadline = deadline;
+        params.slippageBps = slippageBps;
         
-        // Prepare swap parameters and get minimum amount out
-        uint256 finalMinAmountOut = _prepareSwapParams(swapAmount, amountOutMin, path, slippageBps);
+        // Calculate fee and swap amounts
+        (params.feeAmount, params.swapAmount) = _calculateFeeAndSwapAmount(amountIn);
         
         // Handle token transfers and fees
-        _handleTokenTransferAndFee(path[0], amountIn, feeAmount, swapAmount);
+        _handleTokenTransferAndFee(path[0], amountIn, params.feeAmount, params.swapAmount);
         
-        // Get expected amounts for slippage calculation
-        uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(swapAmount, path);
-        uint256 expectedOutput = expectedAmounts[expectedAmounts.length - 1];
-        
-        // Execute swap
-        amounts = uniswapRouter.swapExactTokensForTokens(
-            swapAmount,
-            finalMinAmountOut,
-            path,
-            to,
-            deadline
-        );
-        
-        // Calculate and check slippage
-        uint256 actualSlippage = _calculateAndCheckSlippage(expectedOutput, amounts[amounts.length - 1], slippageBps);
-        
-        emit SwapExecuted(
-            msg.sender, 
-            path[0], 
-            path[path.length - 1], 
-            amountIn, 
-            amounts[amounts.length - 1], 
-            feeAmount, 
-            actualSlippage
-        );
+        // Execute swap with slippage protection
+        (amounts, ) = _executeSwapWithSlippage(params);
         
         return amounts;
     }
