@@ -82,7 +82,46 @@ contract UnikronSwapRouter {
         return (amountOut * (FEE_DENOMINATOR - slippageBps)) / FEE_DENOMINATOR;
     }
     
-    // Enhanced swap function with slippage protection
+    // Helper function to calculate fees and swap amounts
+    function _calculateFeeAndSwapAmount(uint256 amountIn) 
+        private 
+        view 
+        returns (uint256 feeAmount, uint256 swapAmount) 
+    {
+        feeAmount = (amountIn * feePercentage) / FEE_DENOMINATOR;
+        swapAmount = amountIn - feeAmount;
+    }
+    
+    // Helper function to handle token transfers and fee storage
+    function _handleTokenTransferAndFee(
+        address tokenIn, 
+        uint256 amountIn, 
+        uint256 feeAmount, 
+        uint256 swapAmount
+    ) private {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+        tokenBalances[tokenIn] += feeAmount;
+        IERC20(tokenIn).approve(UNISWAP_V2_ROUTER, swapAmount);
+    }
+    
+    // Helper function to calculate and check slippage
+    function _calculateAndCheckSlippage(
+        uint256 expectedAmount,
+        uint256 actualAmount,
+        uint256 slippageBps
+    ) private view returns (uint256 actualSlippage) {
+        if (expectedAmount > actualAmount) {
+            actualSlippage = ((expectedAmount - actualAmount) * FEE_DENOMINATOR) / expectedAmount;
+        } else {
+            actualSlippage = 0;
+        }
+        
+        if (actualSlippage > slippageBps) {
+            emit SlippageExceeded(msg.sender, expectedAmount, actualAmount);
+        }
+    }
+    
+    // Enhanced swap function with slippage protection (refactored)
     function swapExactTokensForTokensWithSlippage(
         uint256 amountIn,
         uint256 amountOutMin,
@@ -90,7 +129,7 @@ contract UnikronSwapRouter {
         address to,
         uint256 deadline,
         uint256 slippageBps
-    ) external 
+    ) public 
         validToken(path[0]) 
         validToken(path[path.length - 1]) 
         validSlippage(slippageBps)
@@ -100,30 +139,18 @@ contract UnikronSwapRouter {
         require(amountIn > 0, "Amount must be greater than 0");
         require(deadline >= block.timestamp, "Transaction expired");
         
-        address tokenIn = path[0];
-        address tokenOut = path[path.length - 1];
+        // Calculate fee and swap amounts
+        (uint256 feeAmount, uint256 swapAmount) = _calculateFeeAndSwapAmount(amountIn);
         
-        // Calculate fee
-        uint256 feeAmount = (amountIn * feePercentage) / FEE_DENOMINATOR;
-        uint256 swapAmount = amountIn - feeAmount;
-        
-        // Get expected output and apply slippage protection
+        // Get expected output and calculate minimum amount out
         uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(swapAmount, path);
         uint256 minAmountOut = calculateMinAmountOut(expectedAmounts[expectedAmounts.length - 1], slippageBps);
-        
-        // Use the higher of user-provided amountOutMin and calculated minAmountOut
         uint256 finalMinAmountOut = amountOutMin > minAmountOut ? amountOutMin : minAmountOut;
         
-        // Transfer tokens from user
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+        // Handle token transfers and fees
+        _handleTokenTransferAndFee(path[0], amountIn, feeAmount, swapAmount);
         
-        // Store fee
-        tokenBalances[tokenIn] += feeAmount;
-        
-        // Approve router to spend tokens
-        IERC20(tokenIn).approve(UNISWAP_V2_ROUTER, swapAmount);
-        
-        // Execute swap with slippage protection
+        // Execute swap
         amounts = uniswapRouter.swapExactTokensForTokens(
             swapAmount,
             finalMinAmountOut,
@@ -132,15 +159,22 @@ contract UnikronSwapRouter {
             deadline
         );
         
-        // Check if slippage was within tolerance
-        uint256 actualSlippage = expectedAmounts[expectedAmounts.length - 1] > amounts[amounts.length - 1] ?
-            ((expectedAmounts[expectedAmounts.length - 1] - amounts[amounts.length - 1]) * FEE_DENOMINATOR) / expectedAmounts[expectedAmounts.length - 1] : 0;
+        // Calculate and check slippage
+        uint256 actualSlippage = _calculateAndCheckSlippage(
+            expectedAmounts[expectedAmounts.length - 1],
+            amounts[amounts.length - 1],
+            slippageBps
+        );
         
-        if (actualSlippage > slippageBps) {
-            emit SlippageExceeded(msg.sender, expectedAmounts[expectedAmounts.length - 1], amounts[amounts.length - 1]);
-        }
-        
-        emit SwapExecuted(msg.sender, tokenIn, tokenOut, amountIn, amounts[amounts.length - 1], feeAmount, actualSlippage);
+        emit SwapExecuted(
+            msg.sender, 
+            path[0], 
+            path[path.length - 1], 
+            amountIn, 
+            amounts[amounts.length - 1], 
+            feeAmount, 
+            actualSlippage
+        );
         
         return amounts;
     }
