@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
@@ -117,19 +116,31 @@ contract UnikronSwapRouter {
         IERC20(tokenIn).approve(UNISWAP_V2_ROUTER, swapAmount);
     }
     
-    // Consolidated swap execution helper function
-    function _executeSwapWithSlippage(SwapParams memory params) 
-        private 
-        returns (uint256[] memory amounts, uint256 actualSlippage) 
-    {
-        // Get expected amounts for slippage calculation
-        uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(params.swapAmount, params.path);
-        uint256 expectedOutput = expectedAmounts[expectedAmounts.length - 1];
-        
-        // Calculate minimum amount out
-        uint256 minAmountOut = calculateMinAmountOut(expectedOutput, params.slippageBps);
-        uint256 finalMinAmountOut = params.amountOutMin > minAmountOut ? params.amountOutMin : minAmountOut;
-        
+    // Helper to get expected amounts and output
+    function _getExpectedAmountsAndOutput(
+        uint256 swapAmount,
+        address[] memory path
+    ) private view returns (uint256[] memory expectedAmounts, uint256 expectedOutput) {
+        expectedAmounts = uniswapRouter.getAmountsOut(swapAmount, path);
+        expectedOutput = expectedAmounts[expectedAmounts.length - 1];
+    }
+    
+    // Helper to calculate final minimum amount
+    function _calculateFinalMinAmount(
+        uint256 expectedOutput,
+        uint256 slippageBps,
+        uint256 amountOutMin
+    ) private pure returns (uint256 finalMinAmountOut) {
+        uint256 minAmountOut = calculateMinAmountOut(expectedOutput, slippageBps);
+        finalMinAmountOut = amountOutMin > minAmountOut ? amountOutMin : minAmountOut;
+    }
+    
+    // Helper to perform swap and emit events
+    function _performSwapAndEmitEvents(
+        SwapParams memory params,
+        uint256 finalMinAmountOut,
+        uint256 expectedOutput
+    ) private returns (uint256[] memory amounts, uint256 actualSlippage) {
         // Execute swap
         amounts = uniswapRouter.swapExactTokensForTokens(
             params.swapAmount,
@@ -140,15 +151,16 @@ contract UnikronSwapRouter {
         );
         
         // Calculate actual slippage
-        if (expectedOutput > amounts[amounts.length - 1]) {
-            actualSlippage = ((expectedOutput - amounts[amounts.length - 1]) * FEE_DENOMINATOR) / expectedOutput;
+        uint256 actualOutput = amounts[amounts.length - 1];
+        if (expectedOutput > actualOutput) {
+            actualSlippage = ((expectedOutput - actualOutput) * FEE_DENOMINATOR) / expectedOutput;
         } else {
             actualSlippage = 0;
         }
         
         // Check if slippage exceeded tolerance
         if (actualSlippage > params.slippageBps) {
-            emit SlippageExceeded(msg.sender, expectedOutput, amounts[amounts.length - 1]);
+            emit SlippageExceeded(msg.sender, expectedOutput, actualOutput);
         }
         
         // Emit swap executed event
@@ -157,9 +169,35 @@ contract UnikronSwapRouter {
             params.path[0], 
             params.path[params.path.length - 1], 
             params.amountIn, 
-            amounts[amounts.length - 1], 
+            actualOutput, 
             params.feeAmount, 
             actualSlippage
+        );
+    }
+    
+    // Consolidated swap execution helper function (simplified)
+    function _executeSwapWithSlippage(SwapParams memory params) 
+        private 
+        returns (uint256[] memory amounts, uint256 actualSlippage) 
+    {
+        // Get expected amounts
+        (uint256[] memory expectedAmounts, uint256 expectedOutput) = _getExpectedAmountsAndOutput(
+            params.swapAmount, 
+            params.path
+        );
+        
+        // Calculate final minimum amount
+        uint256 finalMinAmountOut = _calculateFinalMinAmount(
+            expectedOutput,
+            params.slippageBps,
+            params.amountOutMin
+        );
+        
+        // Perform swap and emit events
+        (amounts, actualSlippage) = _performSwapAndEmitEvents(
+            params,
+            finalMinAmountOut,
+            expectedOutput
         );
     }
     
