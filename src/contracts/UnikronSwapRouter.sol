@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
@@ -109,7 +110,7 @@ contract UnikronSwapRouter {
         uint256 expectedAmount,
         uint256 actualAmount,
         uint256 slippageBps
-    ) private view returns (uint256 actualSlippage) {
+    ) private returns (uint256 actualSlippage) {
         if (expectedAmount > actualAmount) {
             actualSlippage = ((expectedAmount - actualAmount) * FEE_DENOMINATOR) / expectedAmount;
         } else {
@@ -121,7 +122,19 @@ contract UnikronSwapRouter {
         }
     }
     
-    // Enhanced swap function with slippage protection (refactored)
+    // Helper function to prepare swap parameters
+    function _prepareSwapParams(
+        uint256 swapAmount,
+        uint256 amountOutMin,
+        address[] calldata path,
+        uint256 slippageBps
+    ) private view returns (uint256 finalMinAmountOut) {
+        uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(swapAmount, path);
+        uint256 minAmountOut = calculateMinAmountOut(expectedAmounts[expectedAmounts.length - 1], slippageBps);
+        finalMinAmountOut = amountOutMin > minAmountOut ? amountOutMin : minAmountOut;
+    }
+    
+    // Enhanced swap function with slippage protection (refactored to avoid stack too deep)
     function swapExactTokensForTokensWithSlippage(
         uint256 amountIn,
         uint256 amountOutMin,
@@ -142,13 +155,15 @@ contract UnikronSwapRouter {
         // Calculate fee and swap amounts
         (uint256 feeAmount, uint256 swapAmount) = _calculateFeeAndSwapAmount(amountIn);
         
-        // Get expected output and calculate minimum amount out
-        uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(swapAmount, path);
-        uint256 minAmountOut = calculateMinAmountOut(expectedAmounts[expectedAmounts.length - 1], slippageBps);
-        uint256 finalMinAmountOut = amountOutMin > minAmountOut ? amountOutMin : minAmountOut;
+        // Prepare swap parameters and get minimum amount out
+        uint256 finalMinAmountOut = _prepareSwapParams(swapAmount, amountOutMin, path, slippageBps);
         
         // Handle token transfers and fees
         _handleTokenTransferAndFee(path[0], amountIn, feeAmount, swapAmount);
+        
+        // Get expected amounts for slippage calculation
+        uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(swapAmount, path);
+        uint256 expectedOutput = expectedAmounts[expectedAmounts.length - 1];
         
         // Execute swap
         amounts = uniswapRouter.swapExactTokensForTokens(
@@ -160,11 +175,7 @@ contract UnikronSwapRouter {
         );
         
         // Calculate and check slippage
-        uint256 actualSlippage = _calculateAndCheckSlippage(
-            expectedAmounts[expectedAmounts.length - 1],
-            amounts[amounts.length - 1],
-            slippageBps
-        );
+        uint256 actualSlippage = _calculateAndCheckSlippage(expectedOutput, amounts[amounts.length - 1], slippageBps);
         
         emit SwapExecuted(
             msg.sender, 
