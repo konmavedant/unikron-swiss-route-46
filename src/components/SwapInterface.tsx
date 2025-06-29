@@ -1,10 +1,11 @@
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePrices } from "@/hooks/usePrices";
+import SlippageSettings from "./SlippageSettings";
 
 interface SwapInterfaceProps {
   amount: string;
@@ -28,6 +29,7 @@ const SwapInterface = ({
   const symbols = useMemo(() => [fromToken.symbol], [fromToken.symbol]);
   const { getPriceData } = usePrices(symbols);
   const priceData = getPriceData(fromToken.symbol);
+  const [slippage, setSlippage] = useState(2.0); // Default 2% slippage
 
   const handleMaxClick = () => {
     onAmountChange(fromToken.balance || "2.5");
@@ -38,13 +40,26 @@ const SwapInterface = ({
       (parseFloat(amount) * priceData.price).toFixed(2) : "0.00";
   }, [amount, priceData?.price]);
 
+  const estimatedMinReceived = useMemo(() => {
+    if (!amount || !priceData) return "0.00";
+    const baseAmount = parseFloat(amount) * priceData.price;
+    const slippageAmount = baseAmount * (slippage / 100);
+    return (baseAmount - slippageAmount).toFixed(4);
+  }, [amount, priceData?.price, slippage]);
+
   return (
     <div className="space-y-4">
       <Card className="border border-gray-200">
         <CardContent className="p-4">
-          <Label className="text-sm font-medium text-gray-600 mb-2 block">
-            Swap Amount
-          </Label>
+          <div className="flex justify-between items-center mb-2">
+            <Label className="text-sm font-medium text-gray-600">
+              Swap Amount
+            </Label>
+            <SlippageSettings 
+              slippage={slippage} 
+              onSlippageChange={setSlippage}
+            />
+          </div>
           <div className="relative">
             <Input
               type="number"
@@ -62,11 +77,19 @@ const SwapInterface = ({
               MAX
             </Button>
           </div>
-          {amount && priceData && (
-            <div className="mt-2 text-sm text-gray-500">
-              ≈ ${usdValue} USD
-            </div>
-          )}
+          <div className="mt-3 space-y-1">
+            {amount && priceData && (
+              <div className="text-sm text-gray-500">
+                ≈ ${usdValue} USD
+              </div>
+            )}
+            {amount && priceData && (
+              <div className="text-xs text-gray-400 flex justify-between">
+                <span>Minimum received (after {slippage}% slippage):</span>
+                <span className="font-medium">${estimatedMinReceived}</span>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -96,6 +119,13 @@ const SwapInterface = ({
       >
         {!isConnected ? "Connect Wallet to Start" : "Start Route"}
       </Button>
+      
+      {amount && (
+        <div className="text-xs text-gray-500 text-center space-y-1">
+          <div>Network Fee: ~0.01 ETH | UNIKRON Fee: 0.25%</div>
+          <div>Max Slippage: {slippage}% | Optimized for Sepolia Testnet</div>
+        </div>
+      )}
     </div>
   );
 };

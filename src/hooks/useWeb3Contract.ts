@@ -1,6 +1,5 @@
-
 import { useState, useCallback } from 'react';
-import { UNIKRON_SWAP_ROUTER_ABI, SEPOLIA_ADDRESSES, getDeadline, parseUnits, formatUnits, calculateMinAmountOut } from '@/utils/contractUtils';
+import { UNIKRON_SWAP_ROUTER_ABI, SEPOLIA_ADDRESSES, getDeadline, parseUnits, formatUnits, calculateMinAmountOut, convertSlippageToBasicPoints } from '@/utils/contractUtils';
 
 interface SwapParams {
   fromToken: string;
@@ -13,6 +12,14 @@ interface SwapParams {
 interface CrossChainSwapParams extends SwapParams {
   targetChainId: number;
   targetAddress: string;
+}
+
+interface SwapQuoteResult {
+  expectedAmountOut: string;
+  minAmountOut: string;
+  feeAmount: string;
+  slippageBps: number;
+  priceImpact: string;
 }
 
 export const useWeb3Contract = () => {
@@ -43,33 +50,33 @@ export const useWeb3Contract = () => {
         throw new Error('Please switch to Sepolia testnet');
       }
 
-      // Get contract instance (using ethers.js would be better, but for demo purposes)
+      // Get contract instance
       const contractAddress = SEPOLIA_ADDRESSES.UNIKRON_SWAP_ROUTER;
-      if (!contractAddress || contractAddress === '0x') {
+      if (!contractAddress || contractAddress === '0x0000000000000000000000000000000000000000') {
         throw new Error('Contract not deployed yet. Please deploy the contract first.');
       }
 
-      // Prepare transaction parameters
+      // Prepare transaction parameters with slippage
       const path = [params.fromToken, params.toToken];
       const amountIn = parseUnits(params.amount);
+      const slippageBps = convertSlippageToBasicPoints(params.slippage || 2);
       const amountOutMin = parseUnits(calculateMinAmountOut(params.amount, params.slippage || 2));
       const to = params.recipient || userAccount;
       const deadline = getDeadline(20);
 
-      // Encode function call
-      const functionSignature = 'swapExactTokensForTokens(uint256,uint256,address[],address,uint256)';
-      
-      console.log('Swap parameters:', {
+      console.log('Enhanced swap parameters:', {
         amountIn: amountIn.toString(),
         amountOutMin: amountOutMin.toString(),
         path,
         to,
-        deadline
+        deadline: deadline.toString(),
+        slippageBps,
+        slippagePercent: params.slippage || 2
       });
 
-      // For demo purposes, we'll just log the transaction
-      // In production, you'd use ethers.js or web3.js to actually execute
-      console.log('Would execute swap with contract:', contractAddress);
+      // For demo purposes, we'll simulate the enhanced swap
+      // In production, you'd use the swapExactTokensForTokensWithSlippage function
+      console.log('Would execute enhanced swap with slippage protection:', contractAddress);
       
       // Simulate transaction hash
       const simulatedTxHash = '0x' + Math.random().toString(16).substr(2, 64);
@@ -78,7 +85,7 @@ export const useWeb3Contract = () => {
       return {
         success: true,
         txHash: simulatedTxHash,
-        message: 'Swap initiated successfully (simulated)'
+        message: `Swap initiated successfully with ${params.slippage || 2}% slippage protection (simulated)`
       };
 
     } catch (err) {
@@ -91,6 +98,53 @@ export const useWeb3Contract = () => {
       };
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const getQuoteWithSlippage = useCallback(async (
+    fromToken: string, 
+    toToken: string, 
+    amount: string, 
+    slippagePercent: number = 2
+  ): Promise<SwapQuoteResult | null> => {
+    try {
+      if (!amount || parseFloat(amount) <= 0) {
+        return null;
+      }
+
+      // Simulate getting enhanced quote from contract
+      // In production, this would call getSwapQuoteWithSlippage
+      const mockExchangeRate = Math.random() * 0.1 + 0.9; // Random rate between 0.9-1.0
+      const expectedOutput = parseFloat(amount) * mockExchangeRate;
+      const minOutput = expectedOutput * (1 - slippagePercent / 100);
+      const feeAmount = parseFloat(amount) * 0.0025; // 0.25% fee
+      const slippageBps = convertSlippageToBasicPoints(slippagePercent);
+      
+      // Calculate price impact (simplified)
+      const priceImpact = ((expectedOutput - minOutput) / expectedOutput * 100).toFixed(2);
+
+      console.log('Enhanced quote request:', { 
+        fromToken, 
+        toToken, 
+        amount, 
+        slippagePercent,
+        expectedOutput,
+        minOutput,
+        feeAmount,
+        slippageBps,
+        priceImpact
+      });
+
+      return {
+        expectedAmountOut: expectedOutput.toString(),
+        minAmountOut: minOutput.toString(),
+        feeAmount: feeAmount.toString(),
+        slippageBps,
+        priceImpact
+      };
+    } catch (err) {
+      console.error('Quote error:', err);
+      return null;
     }
   }, []);
 
@@ -117,7 +171,8 @@ export const useWeb3Contract = () => {
         fromToken: params.fromToken,
         amount: params.amount,
         targetChainId: params.targetChainId,
-        targetAddress: params.targetAddress
+        targetAddress: params.targetAddress,
+        slippage: params.slippage
       });
 
       // For demo purposes, simulate cross-chain transaction
@@ -149,24 +204,22 @@ export const useWeb3Contract = () => {
         return null;
       }
 
-      // Simulate getting quote from contract
-      // In production, this would call the contract's getSwapQuote function
-      const mockExchangeRate = Math.random() * 0.1 + 0.9; // Random rate between 0.9-1.0
-      const estimatedOutput = (parseFloat(amount) * mockExchangeRate).toString();
-
-      console.log('Quote request:', { fromToken, toToken, amount, estimatedOutput });
+      // Use the enhanced quote function with default 2% slippage
+      const enhancedQuote = await getQuoteWithSlippage(fromToken, toToken, amount, 2);
+      
+      if (!enhancedQuote) return null;
 
       return {
         amountIn: amount,
-        amountOut: estimatedOutput,
+        amountOut: enhancedQuote.expectedAmountOut,
         path: [fromToken, toToken],
-        fee: (parseFloat(amount) * 0.0025).toString() // 0.25% fee
+        fee: enhancedQuote.feeAmount
       };
     } catch (err) {
       console.error('Quote error:', err);
       return null;
     }
-  }, []);
+  }, [getQuoteWithSlippage]);
 
   return {
     loading,
@@ -174,6 +227,7 @@ export const useWeb3Contract = () => {
     txHash,
     executeSwap,
     executeCrossChainSwap,
-    getQuote
+    getQuote,
+    getQuoteWithSlippage
   };
 };

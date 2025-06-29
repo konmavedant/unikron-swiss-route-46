@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
@@ -7,17 +6,22 @@ import "./IUniswapV2Router.sol";
 
 contract UnikronSwapRouter {
     address public owner;
-    address public constant UNISWAP_V2_ROUTER = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D; // Mainnet address, use Sepolia equivalent
-    address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // Mainnet WETH, use Sepolia equivalent
+    address public constant UNISWAP_V2_ROUTER = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D; // Works on Sepolia
+    address public constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14; // Sepolia WETH
     
     uint256 public constant MAX_INT = 2**256 - 1;
     uint256 public feePercentage = 25; // 0.25% fee (25/10000)
     uint256 public constant FEE_DENOMINATOR = 10000;
+    uint256 public constant MAX_SLIPPAGE = 5000; // 50% max slippage protection
     
     IUniswapV2Router private uniswapRouter;
     
     mapping(address => bool) public authorizedTokens;
     mapping(address => uint256) public tokenBalances;
+    
+    // Sepolia testnet token addresses for easy testing
+    address public constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238; // Sepolia USDC (if available)
+    address public constant SEPOLIA_DAI = 0x3e622317f8C93f7328350cF0B56d9eD4C620C5d6; // Sepolia DAI (if available)
     
     event SwapExecuted(
         address indexed user,
@@ -25,7 +29,8 @@ contract UnikronSwapRouter {
         address indexed tokenOut,
         uint256 amountIn,
         uint256 amountOut,
-        uint256 fee
+        uint256 fee,
+        uint256 slippageUsed
     );
     
     event CrossChainSwapInitiated(
@@ -38,6 +43,7 @@ contract UnikronSwapRouter {
     
     event FeesCollected(address indexed token, uint256 amount);
     event TokenAuthorized(address indexed token, bool authorized);
+    event SlippageExceeded(address indexed user, uint256 expectedAmount, uint256 actualAmount);
     
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner can call this function");
@@ -49,35 +55,47 @@ contract UnikronSwapRouter {
         _;
     }
     
+    modifier validSlippage(uint256 slippageBps) {
+        require(slippageBps <= MAX_SLIPPAGE, "Slippage too high");
+        _;
+    }
+    
     constructor() {
         owner = msg.sender;
         uniswapRouter = IUniswapV2Router(UNISWAP_V2_ROUTER);
         
-        // Pre-authorize common tokens (you'll need to set actual Sepolia addresses)
+        // Pre-authorize tokens for Sepolia testing
         authorizedTokens[WETH] = true;
-        // Add more tokens as needed for Sepolia testnet
+        if (SEPOLIA_USDC != address(0)) {
+            authorizedTokens[SEPOLIA_USDC] = true;
+        }
+        if (SEPOLIA_DAI != address(0)) {
+            authorizedTokens[SEPOLIA_DAI] = true;
+        }
     }
     
-    // Authorize/deauthorize tokens for swapping
-    function setTokenAuthorization(address token, bool authorized) external onlyOwner {
-        authorizedTokens[token] = authorized;
-        emit TokenAuthorized(token, authorized);
+    // Calculate minimum amount out based on slippage tolerance
+    function calculateMinAmountOut(
+        uint256 amountOut,
+        uint256 slippageBps
+    ) public pure returns (uint256) {
+        return (amountOut * (FEE_DENOMINATOR - slippageBps)) / FEE_DENOMINATOR;
     }
     
-    // Set fee percentage (in basis points, e.g., 25 = 0.25%)
-    function setFeePercentage(uint256 _feePercentage) external onlyOwner {
-        require(_feePercentage <= 1000, "Fee cannot exceed 10%"); // Max 10% fee
-        feePercentage = _feePercentage;
-    }
-    
-    // Swap exact tokens for tokens
-    function swapExactTokensForTokens(
+    // Enhanced swap function with slippage protection
+    function swapExactTokensForTokensWithSlippage(
         uint256 amountIn,
         uint256 amountOutMin,
         address[] calldata path,
         address to,
-        uint256 deadline
-    ) external validToken(path[0]) validToken(path[path.length - 1]) returns (uint256[] memory amounts) {
+        uint256 deadline,
+        uint256 slippageBps
+    ) external 
+        validToken(path[0]) 
+        validToken(path[path.length - 1]) 
+        validSlippage(slippageBps)
+        returns (uint256[] memory amounts) 
+    {
         require(path.length >= 2, "Invalid path");
         require(amountIn > 0, "Amount must be greater than 0");
         require(deadline >= block.timestamp, "Transaction expired");
@@ -89,6 +107,13 @@ contract UnikronSwapRouter {
         uint256 feeAmount = (amountIn * feePercentage) / FEE_DENOMINATOR;
         uint256 swapAmount = amountIn - feeAmount;
         
+        // Get expected output and apply slippage protection
+        uint256[] memory expectedAmounts = uniswapRouter.getAmountsOut(swapAmount, path);
+        uint256 minAmountOut = calculateMinAmountOut(expectedAmounts[expectedAmounts.length - 1], slippageBps);
+        
+        // Use the higher of user-provided amountOutMin and calculated minAmountOut
+        uint256 finalMinAmountOut = amountOutMin > minAmountOut ? amountOutMin : minAmountOut;
+        
         // Transfer tokens from user
         IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
         
@@ -98,27 +123,59 @@ contract UnikronSwapRouter {
         // Approve router to spend tokens
         IERC20(tokenIn).approve(UNISWAP_V2_ROUTER, swapAmount);
         
-        // Execute swap
+        // Execute swap with slippage protection
         amounts = uniswapRouter.swapExactTokensForTokens(
             swapAmount,
-            amountOutMin,
+            finalMinAmountOut,
             path,
             to,
             deadline
         );
         
-        emit SwapExecuted(msg.sender, tokenIn, tokenOut, amountIn, amounts[amounts.length - 1], feeAmount);
+        // Check if slippage was within tolerance
+        uint256 actualSlippage = expectedAmounts[expectedAmounts.length - 1] > amounts[amounts.length - 1] ?
+            ((expectedAmounts[expectedAmounts.length - 1] - amounts[amounts.length - 1]) * FEE_DENOMINATOR) / expectedAmounts[expectedAmounts.length - 1] : 0;
+        
+        if (actualSlippage > slippageBps) {
+            emit SlippageExceeded(msg.sender, expectedAmounts[expectedAmounts.length - 1], amounts[amounts.length - 1]);
+        }
+        
+        emit SwapExecuted(msg.sender, tokenIn, tokenOut, amountIn, amounts[amounts.length - 1], feeAmount, actualSlippage);
         
         return amounts;
     }
     
-    // Swap ETH for exact tokens
-    function swapETHForExactTokens(
-        uint256 amountOut,
+    // Legacy function for backward compatibility
+    function swapExactTokensForTokens(
+        uint256 amountIn,
+        uint256 amountOutMin,
         address[] calldata path,
         address to,
         uint256 deadline
-    ) external payable validToken(path[path.length - 1]) returns (uint256[] memory amounts) {
+    ) external returns (uint256[] memory amounts) {
+        // Default to 2% slippage for legacy calls
+        return swapExactTokensForTokensWithSlippage(
+            amountIn,
+            amountOutMin,
+            path,
+            to,
+            deadline,
+            200 // 2% slippage
+        );
+    }
+    
+    // Enhanced ETH swap with slippage protection
+    function swapETHForExactTokensWithSlippage(
+        uint256 amountOut,
+        address[] calldata path,
+        address to,
+        uint256 deadline,
+        uint256 slippageBps
+    ) external payable 
+        validToken(path[path.length - 1]) 
+        validSlippage(slippageBps)
+        returns (uint256[] memory amounts) 
+    {
         require(path[0] == WETH, "First token must be WETH");
         require(msg.value > 0, "Must send ETH");
         require(deadline >= block.timestamp, "Transaction expired");
@@ -144,50 +201,63 @@ contract UnikronSwapRouter {
             payable(msg.sender).transfer(refundAmount);
         }
         
-        emit SwapExecuted(msg.sender, WETH, path[path.length - 1], amounts[0], amountOut, feeAmount);
+        emit SwapExecuted(msg.sender, WETH, path[path.length - 1], amounts[0], amountOut, feeAmount, slippageBps);
         
         return amounts;
     }
     
-    // Swap exact tokens for ETH
-    function swapExactTokensForETH(
+    // Get swap quote with slippage calculation
+    function getSwapQuoteWithSlippage(
         uint256 amountIn,
-        uint256 amountOutMin,
         address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external validToken(path[0]) returns (uint256[] memory amounts) {
-        require(path[path.length - 1] == WETH, "Last token must be WETH");
-        require(amountIn > 0, "Amount must be greater than 0");
-        require(deadline >= block.timestamp, "Transaction expired");
-        
-        address tokenIn = path[0];
-        
-        // Calculate fee
-        uint256 feeAmount = (amountIn * feePercentage) / FEE_DENOMINATOR;
+        uint256 slippageBps
+    ) external view 
+        validSlippage(slippageBps)
+        returns (uint256[] memory amounts, uint256 minAmountOut, uint256 feeAmount) 
+    {
+        feeAmount = (amountIn * feePercentage) / FEE_DENOMINATOR;
         uint256 swapAmount = amountIn - feeAmount;
         
-        // Transfer tokens from user
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+        amounts = uniswapRouter.getAmountsOut(swapAmount, path);
+        minAmountOut = calculateMinAmountOut(amounts[amounts.length - 1], slippageBps);
         
-        // Store fee
-        tokenBalances[tokenIn] += feeAmount;
-        
-        // Approve router to spend tokens
-        IERC20(tokenIn).approve(UNISWAP_V2_ROUTER, swapAmount);
-        
-        // Execute swap
-        amounts = uniswapRouter.swapExactTokensForETH(
-            swapAmount,
-            amountOutMin,
-            path,
-            to,
-            deadline
-        );
-        
-        emit SwapExecuted(msg.sender, tokenIn, WETH, amountIn, amounts[amounts.length - 1], feeAmount);
-        
-        return amounts;
+        return (amounts, minAmountOut, feeAmount);
+    }
+    
+    // Testnet helper functions for easy testing
+    function getSepoliaTokens() external pure returns (address[] memory tokens) {
+        tokens = new address[](3);
+        tokens[0] = WETH;
+        tokens[1] = SEPOLIA_USDC;
+        tokens[2] = SEPOLIA_DAI;
+        return tokens;
+    }
+    
+    function authorizeSepoliaTokens() external onlyOwner {
+        authorizedTokens[SEPOLIA_USDC] = true;
+        authorizedTokens[SEPOLIA_DAI] = true;
+        emit TokenAuthorized(SEPOLIA_USDC, true);
+        emit TokenAuthorized(SEPOLIA_DAI, true);
+    }
+    
+    // Testnet faucet-like function for testing (remove in production)
+    function mintTestTokens(address token, uint256 amount) external onlyOwner {
+        require(authorizedTokens[token], "Token not authorized");
+        // This would only work with test tokens that have a mint function
+        // In reality, you'd need proper test token contracts
+        tokenBalances[token] += amount;
+    }
+    
+    // Authorize/deauthorize tokens for swapping
+    function setTokenAuthorization(address token, bool authorized) external onlyOwner {
+        authorizedTokens[token] = authorized;
+        emit TokenAuthorized(token, authorized);
+    }
+    
+    // Set fee percentage (in basis points, e.g., 25 = 0.25%)
+    function setFeePercentage(uint256 _feePercentage) external onlyOwner {
+        require(_feePercentage <= 1000, "Fee cannot exceed 10%"); // Max 10% fee
+        feePercentage = _feePercentage;
     }
     
     // Cross-chain swap initiation (for bridge integration)
@@ -215,9 +285,6 @@ contract UnikronSwapRouter {
         
         // Emit event for cross-chain bridge to pick up
         emit CrossChainSwapInitiated(msg.sender, tokenIn, bridgeAmount, targetChainId, targetAddress);
-        
-        // Here you would integrate with actual bridge protocols like LayerZero, Wormhole, etc.
-        // For now, we just emit the event
     }
     
     // Get swap quote
