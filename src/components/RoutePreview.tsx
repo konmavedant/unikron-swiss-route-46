@@ -1,11 +1,12 @@
 
 import { useEffect } from "react";
 import { motion } from "framer-motion";
-import { Clock, DollarSign, Shield, ArrowRight, RefreshCw } from "lucide-react";
+import { Clock, DollarSign, Shield, ArrowRight, RefreshCw, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { usePrices } from "@/hooks/usePrices";
+import { useBlockchain } from "@/contexts/BlockchainContext";
 
 interface RoutePreviewProps {
   fromToken: { symbol: string; chain: string; id?: string };
@@ -16,6 +17,7 @@ interface RoutePreviewProps {
 
 const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreviewProps) => {
   const { getPriceData, fetchPrices, loading } = usePrices([fromToken.symbol, toToken.symbol]);
+  const { isSolana, isEthereum } = useBlockchain();
   
   const fromPriceData = getPriceData(fromToken.symbol);
   const toPriceData = getPriceData(toToken.symbol);
@@ -33,8 +35,33 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
   const estimatedOutput = amount && exchangeRate ? 
     (parseFloat(amount) * exchangeRate).toFixed(6) : "0.00";
 
-  const mockFees = amount ? (parseFloat(amount) * 0.005).toFixed(4) : "0.0000";
-  const bridgeFee = isCrossChain ? "0.25" : "0.00";
+  // Blockchain-specific fee calculations
+  const getNetworkFees = () => {
+    if (isSolana) {
+      return {
+        networkFee: amount ? (0.000005).toFixed(6) : "0.000005", // ~0.000005 SOL
+        networkFeeToken: "SOL",
+        bridgeFee: isCrossChain ? "0.25" : "0.00",
+        jupiterFee: amount ? (parseFloat(amount) * 0.001).toFixed(4) : "0.0000" // 0.1% Jupiter fee
+      };
+    } else {
+      return {
+        networkFee: amount ? (parseFloat(amount) * 0.003).toFixed(4) : "0.0000", // ~0.3% ETH gas
+        networkFeeToken: "ETH",
+        bridgeFee: isCrossChain ? "0.25" : "0.00",
+        jupiterFee: "0.0000"
+      };
+    }
+  };
+
+  const fees = getNetworkFees();
+
+  const getEstimatedTime = () => {
+    if (isSolana && !isCrossChain) return "~1-2 seconds";
+    if (isSolana && isCrossChain) return "2-5 minutes";
+    if (isEthereum && !isCrossChain) return "~30 seconds";
+    return "2-5 minutes";
+  };
 
   const handleRefresh = () => {
     fetchPrices([fromToken.symbol, toToken.symbol]);
@@ -46,8 +73,9 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
       <Card className="swiss-card">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="text-xl font-semibold text-gray-900">
-              Live Exchange Rate
+            <CardTitle className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
+              <span>Live Exchange Rate</span>
+              {isSolana && <Zap className="h-4 w-4 text-yellow-500" />}
             </CardTitle>
             <Button
               variant="ghost"
@@ -104,8 +132,9 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
       {/* Route Information */}
       <Card className="swiss-card">
         <CardHeader>
-          <CardTitle className="text-xl font-semibold text-gray-900 flex items-center">
-            Route Information
+          <CardTitle className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
+            <span>Route Information</span>
+            {isSolana && <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">Jupiter</span>}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -115,7 +144,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
               <span className="text-gray-600">Estimated Time</span>
             </div>
             <span className="font-medium text-gray-900">
-              {isCrossChain ? "2-5 minutes" : "~30 seconds"}
+              {getEstimatedTime()}
             </span>
           </div>
 
@@ -124,7 +153,9 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
               <Shield className="h-4 w-4 text-green-500" />
               <span className="text-gray-600">MEV Protection</span>
             </div>
-            <span className="font-medium text-green-600">Active</span>
+            <span className="font-medium text-green-600">
+              {isSolana ? "Jupiter Protected" : "Active"}
+            </span>
           </div>
 
           <Separator />
@@ -134,13 +165,20 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
             
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Network Fee</span>
-              <span className="text-gray-900">{mockFees} {fromToken.symbol}</span>
+              <span className="text-gray-900">{fees.networkFee} {fees.networkFeeToken}</span>
             </div>
+            
+            {isSolana && parseFloat(fees.jupiterFee) > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Jupiter Protocol Fee</span>
+                <span className="text-gray-900">{fees.jupiterFee} {fromToken.symbol}</span>
+              </div>
+            )}
             
             {isCrossChain && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Cross-Chain Bridge Fee</span>
-                <span className="text-gray-900">{bridgeFee} USDC</span>
+                <span className="text-gray-900">{fees.bridgeFee} USDC</span>
               </div>
             )}
             
@@ -153,11 +191,11 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
       </Card>
 
       {/* Route Visualization */}
-      {isCrossChain && amount && (
+      {(isCrossChain || fromToken.chain !== toToken.chain) && amount && (
         <Card className="swiss-card">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-gray-900">
-              Cross-Chain Route
+              {isSolana ? "Jupiter Route" : "Cross-Chain Route"}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -165,7 +203,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
               <div className="text-center">
                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-2">
                   <span className="text-blue-600 font-semibold">
-                    {fromToken.chain.slice(0, 1)}
+                    {fromToken.chain === "Solana" ? "🌞" : "🔷"}
                   </span>
                 </div>
                 <p className="text-sm font-medium text-gray-900">{fromToken.chain}</p>
@@ -176,9 +214,9 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
                 <motion.div
                   className="absolute"
                   animate={{ x: [-20, 20, -20] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                  transition={{ duration: isSolana ? 1 : 2, repeat: Infinity, ease: "easeInOut" }}
                 >
-                  <div className="w-3 h-3 bg-unikron-blue rounded-full"></div>
+                  <div className={`w-3 h-3 ${isSolana ? 'bg-yellow-500' : 'bg-unikron-blue'} rounded-full`}></div>
                 </motion.div>
                 <ArrowRight className="absolute h-4 w-4 text-gray-400" />
               </div>
@@ -186,12 +224,20 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
               <div className="text-center">
                 <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mb-2">
                   <span className="text-purple-600 font-semibold">
-                    {toToken.chain.slice(0, 1)}
+                    {toToken.chain === "Solana" ? "🌞" : "🔷"}
                   </span>
                 </div>
                 <p className="text-sm font-medium text-gray-900">{toToken.chain}</p>
               </div>
             </div>
+            
+            {isSolana && (
+              <div className="mt-4 text-center">
+                <div className="text-xs text-gray-500 bg-yellow-50 border border-yellow-200 rounded p-2">
+                  Optimized routing through Jupiter's aggregated liquidity sources
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

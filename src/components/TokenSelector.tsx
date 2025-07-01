@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { ChevronDown, Search, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAssetSearch } from "@/hooks/useAssetSearch";
+import { useMultiChainTokens } from "@/hooks/useMultiChainTokens";
 import { usePrices } from "@/hooks/usePrices";
+import { useBlockchain } from "@/contexts/BlockchainContext";
 
 interface Token {
   symbol: string;
@@ -18,101 +20,71 @@ interface Token {
   chain: string;
   icon: string;
   id?: string;
+  address?: string;
+  decimals?: number;
 }
 
 interface TokenSelectorProps {
   label: string;
-  token: { symbol: string; chain: string; balance: string; id?: string };
-  onTokenChange: (token: { symbol: string; chain: string; balance: string; id?: string }) => void;
+  token: { symbol: string; chain: string; balance: string; id?: string; address?: string; decimals?: number };
+  onTokenChange: (token: { symbol: string; chain: string; balance: string; id?: string; address?: string; decimals?: number }) => void;
   showBalance: boolean;
 }
 
 const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelectorProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const { results, loading: searchLoading, searchAssets, clearResults } = useAssetSearch();
+  const [searchResults, setSearchResults] = useState<Token[]>([]);
+  
+  const { tokens, loading: tokensLoading, searchTokens } = useMultiChainTokens();
+  const { selectedBlockchain, isEthereum, isSolana } = useBlockchain();
   const { getPriceData, loading: priceLoading } = usePrices([token.symbol]);
-
-  const defaultTokens: Token[] = [
-    // Major cryptocurrencies
-    { symbol: "BTC", name: "Bitcoin", chain: "Bitcoin", icon: "₿", id: "bitcoin" },
-    { symbol: "ETH", name: "Ethereum", chain: "Ethereum", icon: "🔷", id: "ethereum" },
-    { symbol: "SOL", name: "Solana", chain: "Solana", icon: "🌞", id: "solana" },
-    { symbol: "BNB", name: "BNB", chain: "BSC", icon: "🟡", id: "binancecoin" },
-    { symbol: "XRP", name: "XRP", chain: "XRP Ledger", icon: "💧", id: "ripple" },
-    { symbol: "ADA", name: "Cardano", chain: "Cardano", icon: "🔵", id: "cardano" },
-    { symbol: "DOT", name: "Polkadot", chain: "Polkadot", icon: "🔴", id: "polkadot" },
-    { symbol: "DOGE", name: "Dogecoin", chain: "Dogecoin", icon: "🐕", id: "dogecoin" },
-    { symbol: "AVAX", name: "Avalanche", chain: "Avalanche", icon: "🔺", id: "avalanche-2" },
-    { symbol: "MATIC", name: "Polygon", chain: "Polygon", icon: "🟣", id: "matic-network" },
-    { symbol: "SHIB", name: "Shiba Inu", chain: "Ethereum", icon: "🐕‍🦺", id: "shiba-inu" },
-    { symbol: "LTC", name: "Litecoin", chain: "Litecoin", icon: "🥈", id: "litecoin" },
-    { symbol: "UNI", name: "Uniswap", chain: "Ethereum", icon: "🦄", id: "uniswap" },
-    { symbol: "LINK", name: "Chainlink", chain: "Ethereum", icon: "🔗", id: "chainlink" },
-    { symbol: "ATOM", name: "Cosmos", chain: "Cosmos", icon: "⚛️", id: "cosmos" },
-    
-    // Stablecoins across different chains including Solana
-    { symbol: "USDT", name: "Tether", chain: "Ethereum", icon: "💚", id: "tether" },
-    { symbol: "USDT", name: "Tether", chain: "BSC", icon: "💚", id: "tether" },
-    { symbol: "USDT", name: "Tether", chain: "Polygon", icon: "💚", id: "tether" },
-    { symbol: "USDT", name: "Tether", chain: "Solana", icon: "💚", id: "tether" },
-    { symbol: "USDC", name: "USD Coin", chain: "Ethereum", icon: "💵", id: "usd-coin" },
-    { symbol: "USDC", name: "USD Coin", chain: "BSC", icon: "💵", id: "usd-coin" },
-    { symbol: "USDC", name: "USD Coin", chain: "Polygon", icon: "💵", id: "usd-coin" },
-    { symbol: "USDC", name: "USD Coin", chain: "Solana", icon: "💵", id: "usd-coin" },
-    { symbol: "USDC", name: "USD Coin", chain: "Avalanche", icon: "💵", id: "usd-coin" },
-    { symbol: "BUSD", name: "Binance USD", chain: "BSC", icon: "💛", id: "binance-usd" },
-    { symbol: "DAI", name: "Dai", chain: "Ethereum", icon: "💸", id: "dai" },
-    
-    // Layer 2 and other popular tokens
-    { symbol: "WETH", name: "Wrapped Ethereum", chain: "Ethereum", icon: "🔷", id: "weth" },
-    { symbol: "WBTC", name: "Wrapped Bitcoin", chain: "Ethereum", icon: "₿", id: "wrapped-bitcoin" },
-    { symbol: "CRO", name: "Cronos", chain: "Cronos", icon: "🔵", id: "crypto-com-chain" },
-    { symbol: "FTM", name: "Fantom", chain: "Fantom", icon: "👻", id: "fantom" },
-    { symbol: "NEAR", name: "NEAR Protocol", chain: "NEAR", icon: "🌟", id: "near" },
-    { symbol: "ICP", name: "Internet Computer", chain: "ICP", icon: "♾️", id: "internet-computer" },
-    { symbol: "VET", name: "VeChain", chain: "VeChain", icon: "✅", id: "vechain" },
-    { symbol: "ALGO", name: "Algorand", chain: "Algorand", icon: "◯", id: "algorand" },
-    { symbol: "XLM", name: "Stellar", chain: "Stellar", icon: "🌟", id: "stellar" },
-    { symbol: "HBAR", name: "Hedera", chain: "Hedera", icon: "♦️", id: "hedera-hashgraph" },
-    { symbol: "FLOW", name: "Flow", chain: "Flow", icon: "🌊", id: "flow" },
-    { symbol: "SAND", name: "The Sandbox", chain: "Ethereum", icon: "🏖️", id: "the-sandbox" },
-    { symbol: "MANA", name: "Decentraland", chain: "Ethereum", icon: "🏢", id: "decentraland" },
-    { symbol: "AXS", name: "Axie Infinity", chain: "Ethereum", icon: "🎮", id: "axie-infinity" },
-    { symbol: "APE", name: "ApeCoin", chain: "Ethereum", icon: "🐒", id: "apecoin" },
-  ];
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (query.length > 1) {
-      await searchAssets(query);
+      const results = await searchTokens(query);
+      setSearchResults(results);
     } else {
-      clearResults();
+      setSearchResults([]);
     }
   };
 
-  const handleTokenSelect = (selectedToken: Token | { id: string; symbol: string; name: string }) => {
+  const handleTokenSelect = (selectedToken: Token) => {
     const tokenData = {
       symbol: selectedToken.symbol,
-      chain: 'chain' in selectedToken ? selectedToken.chain : "Ethereum",
+      chain: selectedToken.chain,
       balance: showBalance ? "0" : "0",
-      id: selectedToken.id
+      id: selectedToken.id,
+      address: selectedToken.address,
+      decimals: selectedToken.decimals
     };
     
     onTokenChange(tokenData);
     setIsOpen(false);
     setSearchQuery("");
-    clearResults();
+    setSearchResults([]);
   };
 
   const priceData = getPriceData(token.symbol);
-  const displayTokens = searchQuery.length > 1 ? results : defaultTokens;
+  const displayTokens = searchQuery.length > 1 ? searchResults : tokens;
+
+  // Get the icon for the current blockchain
+  const getBlockchainIcon = () => {
+    if (isSolana) return "🌞";
+    return "🔷";
+  };
 
   return (
     <Card className="border border-gray-200">
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-600">{label}</span>
+          <span className="text-sm font-medium text-gray-600 flex items-center space-x-2">
+            <span>{label}</span>
+            <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+              {getBlockchainIcon()} {selectedBlockchain.toUpperCase()}
+            </span>
+          </span>
           {showBalance && (
             <span className="text-sm text-gray-500">Balance: {token.balance}</span>
           )}
@@ -126,7 +98,7 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
             >
               <div className="flex items-center space-x-3">
                 <div className="text-2xl">
-                  {defaultTokens.find(t => t.symbol === token.symbol && t.chain === token.chain)?.icon || "🪙"}
+                  {tokens.find(t => t.symbol === token.symbol && t.chain === token.chain)?.icon || "🪙"}
                 </div>
                 <div className="text-left">
                   <div className="font-semibold text-lg text-gray-900">{token.symbol}</div>
@@ -154,12 +126,12 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
               <ChevronDown className="h-4 w-4 text-gray-400" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-80 bg-white border border-gray-200 shadow-lg">
+          <DropdownMenuContent className="w-80 bg-white border border-gray-200 shadow-lg z-50">
             <div className="p-3 border-b">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="Search cryptocurrencies..."
+                  placeholder={`Search ${selectedBlockchain} tokens...`}
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                   className="pl-10"
@@ -167,29 +139,27 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
               </div>
             </div>
             <div className="max-h-60 overflow-y-auto">
-              {searchLoading && (
-                <div className="p-3 text-center text-gray-500">Searching...</div>
+              {tokensLoading && (
+                <div className="p-3 text-center text-gray-500">Loading tokens...</div>
               )}
               {displayTokens.map((t, index) => (
                 <DropdownMenuItem
-                  key={`${t.symbol}-${('chain' in t ? t.chain : 'default')}-${index}`}
+                  key={`${t.symbol}-${t.chain}-${index}`}
                   onClick={() => handleTokenSelect(t)}
                   className="p-3 cursor-pointer hover:bg-gray-50"
                 >
                   <div className="flex items-center space-x-3 w-full">
-                    <div className="text-xl">
-                      {'icon' in t ? t.icon : "🪙"}
-                    </div>
+                    <div className="text-xl">{t.icon}</div>
                     <div className="flex-1">
                       <div className="font-medium text-gray-900">{t.symbol}</div>
                       <div className="text-sm text-gray-500">
-                        {t.name} {('chain' in t) && `• ${t.chain}`}
+                        {t.name} • {t.chain}
                       </div>
                     </div>
                   </div>
                 </DropdownMenuItem>
               ))}
-              {!searchLoading && displayTokens.length === 0 && searchQuery.length > 1 && (
+              {!tokensLoading && displayTokens.length === 0 && searchQuery.length > 1 && (
                 <div className="p-3 text-center text-gray-500">No results found</div>
               )}
             </div>

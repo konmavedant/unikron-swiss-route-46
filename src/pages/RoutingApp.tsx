@@ -6,19 +6,23 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { BlockchainProvider } from "@/contexts/BlockchainContext";
 import TokenSelector from "@/components/TokenSelector";
 import SwapInterface from "@/components/SwapInterface";
 import RoutePreview from "@/components/RoutePreview";
 import WalletConnector from "@/components/WalletConnector";
+import BlockchainSelector from "@/components/BlockchainSelector";
 
 interface TokenType {
   symbol: string;
   chain: string;
   balance: string;
   id?: string;
+  address?: string;
+  decimals?: number;
 }
 
-const RoutingApp = () => {
+const RoutingAppContent = () => {
   const [isCrossChain, setIsCrossChain] = useState(true);
   const [fromToken, setFromToken] = useState<TokenType>({ 
     symbol: "ETH", 
@@ -28,7 +32,7 @@ const RoutingApp = () => {
   });
   const [toToken, setToToken] = useState<TokenType>({ 
     symbol: "USDC", 
-    chain: "Polygon", 
+    chain: "Solana", 
     balance: "0",
     id: "usd-coin"
   });
@@ -60,6 +64,7 @@ const RoutingApp = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <BlockchainSelector />
               <Button variant="outline" size="sm">
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
@@ -135,6 +140,7 @@ const RoutingApp = () => {
                   isCrossChain={isCrossChain}
                   isConnected={isConnected}
                   fromToken={fromToken}
+                  toToken={toToken}
                 />
               </CardContent>
             </Card>
@@ -156,6 +162,14 @@ const RoutingApp = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+const RoutingApp = () => {
+  return (
+    <BlockchainProvider>
+      <RoutingAppContent />
+    </BlockchainProvider>
   );
 };
 
