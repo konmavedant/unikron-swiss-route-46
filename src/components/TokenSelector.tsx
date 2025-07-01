@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { ChevronDown, Search, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAssetSearch } from "@/hooks/useAssetSearch";
 import { usePrices } from "@/hooks/usePrices";
+import type { BlockchainType } from "./BlockchainSelector";
 
 interface Token {
   symbol: string;
@@ -26,9 +26,10 @@ interface TokenSelectorProps {
   token: { symbol: string; chain: string; balance: string; id?: string };
   onTokenChange: (token: { symbol: string; chain: string; balance: string; id?: string }) => void;
   showBalance: boolean;
+  blockchain: BlockchainType;
 }
 
-const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelectorProps) => {
+const TokenSelector = ({ label, token, onTokenChange, showBalance, blockchain }: TokenSelectorProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const { results, loading: searchLoading, searchAssets, clearResults } = useAssetSearch();
@@ -95,7 +96,7 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
   const handleTokenSelect = (selectedToken: Token | { id: string; symbol: string; name: string }) => {
     const tokenData = {
       symbol: selectedToken.symbol,
-      chain: 'chain' in selectedToken ? selectedToken.chain : "Ethereum",
+      chain: 'chain' in selectedToken ? selectedToken.chain : (blockchain === 'solana' ? "Solana" : "Ethereum"),
       balance: showBalance ? "0" : "0",
       id: selectedToken.id
     };
