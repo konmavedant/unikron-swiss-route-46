@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { ChevronDown, Search, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,10 +37,10 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
     // Major cryptocurrencies
     { symbol: "BTC", name: "Bitcoin", chain: "Bitcoin", icon: "₿", id: "bitcoin" },
     { symbol: "ETH", name: "Ethereum", chain: "Ethereum", icon: "🔷", id: "ethereum" },
+    { symbol: "SOL", name: "Solana", chain: "Solana", icon: "🌞", id: "solana" },
     { symbol: "BNB", name: "BNB", chain: "BSC", icon: "🟡", id: "binancecoin" },
     { symbol: "XRP", name: "XRP", chain: "XRP Ledger", icon: "💧", id: "ripple" },
     { symbol: "ADA", name: "Cardano", chain: "Cardano", icon: "🔵", id: "cardano" },
-    { symbol: "SOL", name: "Solana", chain: "Solana", icon: "🌞", id: "solana" },
     { symbol: "DOT", name: "Polkadot", chain: "Polkadot", icon: "🔴", id: "polkadot" },
     { symbol: "DOGE", name: "Dogecoin", chain: "Dogecoin", icon: "🐕", id: "dogecoin" },
     { symbol: "AVAX", name: "Avalanche", chain: "Avalanche", icon: "🔺", id: "avalanche-2" },
@@ -52,7 +51,7 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
     { symbol: "LINK", name: "Chainlink", chain: "Ethereum", icon: "🔗", id: "chainlink" },
     { symbol: "ATOM", name: "Cosmos", chain: "Cosmos", icon: "⚛️", id: "cosmos" },
     
-    // Stablecoins across different chains
+    // Stablecoins across different chains including Solana
     { symbol: "USDT", name: "Tether", chain: "Ethereum", icon: "💚", id: "tether" },
     { symbol: "USDT", name: "Tether", chain: "BSC", icon: "💚", id: "tether" },
     { symbol: "USDT", name: "Tether", chain: "Polygon", icon: "💚", id: "tether" },
