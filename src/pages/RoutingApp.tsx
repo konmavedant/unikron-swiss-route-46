@@ -6,7 +6,6 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { BlockchainProvider } from "@/contexts/BlockchainContext";
 import TokenSelector from "@/components/TokenSelector";
 import SwapInterface from "@/components/SwapInterface";
 import RoutePreview from "@/components/RoutePreview";
@@ -22,7 +21,7 @@ interface TokenType {
   decimals?: number;
 }
 
-const RoutingAppContent = () => {
+const RoutingApp = () => {
   const [isCrossChain, setIsCrossChain] = useState(true);
   const [fromToken, setFromToken] = useState<TokenType>({ 
     symbol: "ETH", 
@@ -162,14 +161,6 @@ const RoutingAppContent = () => {
         </div>
       </div>
     </div>
-  );
-};
-
-const RoutingApp = () => {
-  return (
-    <BlockchainProvider>
-      <RoutingAppContent />
-    </BlockchainProvider>
   );
 };
 
