@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePrices } from "@/hooks/usePrices";
 import SlippageSettings from "./SlippageSettings";
+import type { BlockchainType } from "./BlockchainSelector";
 
 interface SwapInterfaceProps {
   amount: string;
@@ -15,6 +16,7 @@ interface SwapInterfaceProps {
   isCrossChain: boolean;
   isConnected: boolean;
   fromToken: { symbol: string; chain: string; balance: string; id?: string };
+  blockchain: BlockchainType;
 }
 
 const SwapInterface = ({
@@ -24,7 +26,8 @@ const SwapInterface = ({
   onRecipientChange,
   isCrossChain,
   isConnected,
-  fromToken
+  fromToken,
+  blockchain
 }: SwapInterfaceProps) => {
   const symbols = useMemo(() => [fromToken.symbol], [fromToken.symbol]);
   const { getPriceData } = usePrices(symbols);
@@ -46,6 +49,14 @@ const SwapInterface = ({
     const slippageAmount = baseAmount * (slippage / 100);
     return (baseAmount - slippageAmount).toFixed(4);
   }, [amount, priceData?.price, slippage]);
+
+  const getNetworkFee = () => {
+    return blockchain === 'solana' ? '~0.0001 SOL' : '~0.01 ETH';
+  };
+
+  const getNetworkName = () => {
+    return blockchain === 'solana' ? 'Solana Devnet' : 'Sepolia Testnet';
+  };
 
   return (
     <div className="space-y-4">
@@ -114,16 +125,23 @@ const SwapInterface = ({
 
       <Button
         size="lg"
-        className="w-full bg-unikron-blue hover:bg-unikron-darkblue text-white py-4 text-lg font-semibold"
+        className={`w-full py-4 text-lg font-semibold ${
+          blockchain === 'solana' 
+            ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600' 
+            : 'bg-unikron-blue hover:bg-unikron-darkblue'
+        } text-white`}
         disabled={!isConnected || !amount}
       >
-        {!isConnected ? "Connect Wallet to Start" : "Start Route"}
+        {!isConnected 
+          ? `Connect ${blockchain === 'solana' ? 'Solana' : 'Ethereum'} Wallet` 
+          : `Start ${blockchain === 'solana' ? 'Solana' : 'EVM'} Route`
+        }
       </Button>
       
       {amount && (
         <div className="text-xs text-gray-500 text-center space-y-1">
-          <div>Network Fee: ~0.01 ETH | UNIKRON Fee: 0.25%</div>
-          <div>Max Slippage: {slippage}% | Optimized for Sepolia Testnet</div>
+          <div>Network Fee: {getNetworkFee()} | UNIKRON Fee: 0.25%</div>
+          <div>Max Slippage: {slippage}% | Optimized for {getNetworkName()}</div>
         </div>
       )}
     </div>

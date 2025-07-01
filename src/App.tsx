@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { WagmiProvider } from 'wagmi';
 import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import { config } from './config/rainbowkit';
+import { SolanaWalletContextProvider } from './contexts/SolanaWalletContext';
 import LandingPage from "./pages/LandingPage";
 import RoutingApp from "./pages/RoutingApp";
 import NotFound from "./pages/NotFound";
@@ -19,17 +20,19 @@ const App = () => (
   <WagmiProvider config={config}>
     <QueryClientProvider client={queryClient}>
       <RainbowKitProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<LandingPage />} />
-              <Route path="/app" element={<RoutingApp />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
+        <SolanaWalletContextProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/app" element={<RoutingApp />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </SolanaWalletContextProvider>
       </RainbowKitProvider>
     </QueryClientProvider>
   </WagmiProvider>
