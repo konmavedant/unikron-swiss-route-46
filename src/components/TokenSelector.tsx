@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { ChevronDown, Search, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAssetSearch } from "@/hooks/useAssetSearch";
 import { usePrices } from "@/hooks/usePrices";
-import type { BlockchainType } from "./BlockchainSelector";
 
 interface Token {
   symbol: string;
@@ -26,33 +26,22 @@ interface TokenSelectorProps {
   token: { symbol: string; chain: string; balance: string; id?: string };
   onTokenChange: (token: { symbol: string; chain: string; balance: string; id?: string }) => void;
   showBalance: boolean;
-  blockchain?: BlockchainType;
 }
 
-const TokenSelector = ({ label, token, onTokenChange, showBalance, blockchain = 'ethereum' }: TokenSelectorProps) => {
+const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelectorProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const { results, loading: searchLoading, searchAssets, clearResults } = useAssetSearch();
   const { getPriceData, loading: priceLoading } = usePrices([token.symbol]);
 
-  const getSolanaTokens = (): Token[] => [
-    { symbol: "SOL", name: "Solana", chain: "Solana", icon: "🌞", id: "solana" },
-    { symbol: "USDC", name: "USD Coin", chain: "Solana", icon: "💵", id: "usd-coin" },
-    { symbol: "USDT", name: "Tether", chain: "Solana", icon: "💚", id: "tether" },
-    { symbol: "RAY", name: "Raydium", chain: "Solana", icon: "⚡", id: "raydium" },
-    { symbol: "SRM", name: "Serum", chain: "Solana", icon: "🔥", id: "serum" },
-    { symbol: "ORCA", name: "Orca", chain: "Solana", icon: "🐋", id: "orca" },
-    { symbol: "STEP", name: "Step Finance", chain: "Solana", icon: "📈", id: "step-finance" },
-    { symbol: "MNGO", name: "Mango", chain: "Solana", icon: "🥭", id: "mango-markets" },
-  ];
-
-  const getEthereumTokens = (): Token[] => [
+  const defaultTokens: Token[] = [
     // Major cryptocurrencies
     { symbol: "BTC", name: "Bitcoin", chain: "Bitcoin", icon: "₿", id: "bitcoin" },
     { symbol: "ETH", name: "Ethereum", chain: "Ethereum", icon: "🔷", id: "ethereum" },
     { symbol: "BNB", name: "BNB", chain: "BSC", icon: "🟡", id: "binancecoin" },
     { symbol: "XRP", name: "XRP", chain: "XRP Ledger", icon: "💧", id: "ripple" },
     { symbol: "ADA", name: "Cardano", chain: "Cardano", icon: "🔵", id: "cardano" },
+    { symbol: "SOL", name: "Solana", chain: "Solana", icon: "🌞", id: "solana" },
     { symbol: "DOT", name: "Polkadot", chain: "Polkadot", icon: "🔴", id: "polkadot" },
     { symbol: "DOGE", name: "Dogecoin", chain: "Dogecoin", icon: "🐕", id: "dogecoin" },
     { symbol: "AVAX", name: "Avalanche", chain: "Avalanche", icon: "🔺", id: "avalanche-2" },
@@ -67,9 +56,11 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance, blockchain = 
     { symbol: "USDT", name: "Tether", chain: "Ethereum", icon: "💚", id: "tether" },
     { symbol: "USDT", name: "Tether", chain: "BSC", icon: "💚", id: "tether" },
     { symbol: "USDT", name: "Tether", chain: "Polygon", icon: "💚", id: "tether" },
+    { symbol: "USDT", name: "Tether", chain: "Solana", icon: "💚", id: "tether" },
     { symbol: "USDC", name: "USD Coin", chain: "Ethereum", icon: "💵", id: "usd-coin" },
     { symbol: "USDC", name: "USD Coin", chain: "BSC", icon: "💵", id: "usd-coin" },
     { symbol: "USDC", name: "USD Coin", chain: "Polygon", icon: "💵", id: "usd-coin" },
+    { symbol: "USDC", name: "USD Coin", chain: "Solana", icon: "💵", id: "usd-coin" },
     { symbol: "USDC", name: "USD Coin", chain: "Avalanche", icon: "💵", id: "usd-coin" },
     { symbol: "BUSD", name: "Binance USD", chain: "BSC", icon: "💛", id: "binance-usd" },
     { symbol: "DAI", name: "Dai", chain: "Ethereum", icon: "💸", id: "dai" },
@@ -92,8 +83,6 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance, blockchain = 
     { symbol: "APE", name: "ApeCoin", chain: "Ethereum", icon: "🐒", id: "apecoin" },
   ];
 
-  const defaultTokens = blockchain === 'solana' ? getSolanaTokens() : getEthereumTokens();
-
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (query.length > 1) {
@@ -106,7 +95,7 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance, blockchain = 
   const handleTokenSelect = (selectedToken: Token | { id: string; symbol: string; name: string }) => {
     const tokenData = {
       symbol: selectedToken.symbol,
-      chain: 'chain' in selectedToken ? selectedToken.chain : (blockchain === 'solana' ? "Solana" : "Ethereum"),
+      chain: 'chain' in selectedToken ? selectedToken.chain : "Ethereum",
       balance: showBalance ? "0" : "0",
       id: selectedToken.id
     };

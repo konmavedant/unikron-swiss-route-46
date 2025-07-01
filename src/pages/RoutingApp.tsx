@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Settings, RefreshCw } from "lucide-react";
+import { ArrowLeft, Settings, Wallet, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,9 +10,6 @@ import TokenSelector from "@/components/TokenSelector";
 import SwapInterface from "@/components/SwapInterface";
 import RoutePreview from "@/components/RoutePreview";
 import WalletConnector from "@/components/WalletConnector";
-import SolanaWalletConnector from "@/components/SolanaWalletConnector";
-import BlockchainSelector, { BlockchainType } from "@/components/BlockchainSelector";
-import { useDualChainWallet } from "@/hooks/useDualChainWallet";
 
 interface TokenType {
   symbol: string;
@@ -37,14 +34,7 @@ const RoutingApp = () => {
   });
   const [amount, setAmount] = useState("");
   const [recipientAddress, setRecipientAddress] = useState("");
-  
-  const { 
-    selectedBlockchain, 
-    setSelectedBlockchain, 
-    isConnected,
-    ethereum,
-    solana 
-  } = useDualChainWallet();
+  const [isConnected, setIsConnected] = useState(false);
 
   const handleFromTokenChange = (token: TokenType) => {
     setFromToken(token);
@@ -52,39 +42,6 @@ const RoutingApp = () => {
 
   const handleToTokenChange = (token: TokenType) => {
     setToToken(token);
-  };
-
-  const handleBlockchainChange = (blockchain: BlockchainType) => {
-    setSelectedBlockchain(blockchain);
-    
-    // Update default tokens based on blockchain
-    if (blockchain === 'solana') {
-      setFromToken({ 
-        symbol: "SOL", 
-        chain: "Solana", 
-        balance: "5.2",
-        id: "solana"
-      });
-      setToToken({ 
-        symbol: "USDC", 
-        chain: "Solana", 
-        balance: "0",
-        id: "usd-coin"
-      });
-    } else {
-      setFromToken({ 
-        symbol: "ETH", 
-        chain: "Ethereum", 
-        balance: "2.5",
-        id: "ethereum"
-      });
-      setToToken({ 
-        symbol: "USDC", 
-        chain: "Polygon", 
-        balance: "0",
-        id: "usd-coin"
-      });
-    }
   };
 
   return (
@@ -100,7 +57,6 @@ const RoutingApp = () => {
               </Link>
               <div className="border-l border-gray-300 pl-4">
                 <h1 className="text-2xl font-bold text-gray-900">UNIKRON Router</h1>
-                <p className="text-sm text-gray-500">Multi-Chain DeFi Aggregator</p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -108,18 +64,7 @@ const RoutingApp = () => {
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </Button>
-              
-              {/* Dual Wallet Connectors */}
-              <div className="flex items-center space-x-2">
-                {selectedBlockchain === 'ethereum' ? (
-                  <WalletConnector 
-                    isConnected={ethereum.connected} 
-                    onConnectionChange={() => {}} 
-                  />
-                ) : (
-                  <SolanaWalletConnector />
-                )}
-              </div>
+              <WalletConnector isConnected={isConnected} onConnectionChange={setIsConnected} />
             </div>
           </div>
         </div>
@@ -132,14 +77,7 @@ const RoutingApp = () => {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6 }}
-            className="space-y-6"
           >
-            {/* Blockchain Selector */}
-            <BlockchainSelector
-              selected={selectedBlockchain}
-              onSelect={handleBlockchainChange}
-            />
-
             <Card className="swiss-card">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
@@ -156,10 +94,7 @@ const RoutingApp = () => {
                   </div>
                 </div>
                 <p className="text-gray-600">
-                  {selectedBlockchain === 'ethereum' 
-                    ? (isCrossChain ? "Route assets across multiple blockchain networks with live pricing" : "Same-chain routing with live pricing")
-                    : "High-speed Solana swaps with Jupiter integration"
-                  }
+                  {isCrossChain ? "Route assets across multiple blockchain networks with live pricing" : "Same-chain routing with live pricing"}
                 </p>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -168,7 +103,6 @@ const RoutingApp = () => {
                   token={fromToken}
                   onTokenChange={handleFromTokenChange}
                   showBalance={true}
-                  blockchain={selectedBlockchain}
                 />
                 
                 <div className="flex justify-center">
@@ -191,7 +125,6 @@ const RoutingApp = () => {
                   token={toToken}
                   onTokenChange={handleToTokenChange}
                   showBalance={false}
-                  blockchain={selectedBlockchain}
                 />
 
                 <SwapInterface
@@ -202,7 +135,6 @@ const RoutingApp = () => {
                   isCrossChain={isCrossChain}
                   isConnected={isConnected}
                   fromToken={fromToken}
-                  blockchain={selectedBlockchain}
                 />
               </CardContent>
             </Card>
@@ -219,7 +151,6 @@ const RoutingApp = () => {
               toToken={toToken}
               amount={amount}
               isCrossChain={isCrossChain}
-              blockchain={selectedBlockchain}
             />
           </motion.div>
         </div>

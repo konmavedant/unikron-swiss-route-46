@@ -12,8 +12,7 @@
   },
   "tokens": {
     "WETH": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
-    "USDC": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-    "DAI": "0x3e622317f8C93f7328350cF0B56d9eD4C620C5d6"
+    "USDC": "0x0000000000000000000000000000000000000000"
   },
   "externalContracts": {
     "UniswapV2Router": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
@@ -23,13 +22,6 @@
     "deployer": "",
     "gasUsed": 0,
     "gasPrice": "",
-    "notes": "Sepolia testnet deployment with slippage protection and enhanced testing features"
-  },
-  "testnetFeatures": {
-    "slippageProtection": true,
-    "maxSlippage": "50%",
-    "defaultSlippage": "2%",
-    "testTokens": ["WETH", "USDC", "DAI"],
-    "faucetFunctions": true
+    "notes": "Update this file after deployment with actual values"
   }
 }
