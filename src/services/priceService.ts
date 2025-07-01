@@ -90,108 +90,48 @@ const MOCK_PRICE_DATA: Record<string, CoinCapAsset> = {
 class PriceService {
   private baseUrl = 'https://api.coincap.io/v2';
   private apiKey = '3bf47ffbb40640d3f525cde946be11e5eb4a553fc525560d930fec818ad41338';
-  private usesFallback = false;
-
-  private async fetchWithAuth(url: string): Promise<Response> {
-    return fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-  }
+  private usesFallback = true; // Always use fallback for now
 
   private getFallbackData(symbol: string): CoinCapAsset | null {
     const upperSymbol = symbol.toUpperCase();
     if (MOCK_PRICE_DATA[upperSymbol]) {
-      console.log(`Using fallback data for ${symbol}`);
-      this.usesFallback = true;
+      console.log(`Using mock data for ${symbol}`);
       return MOCK_PRICE_DATA[upperSymbol];
     }
     return null;
   }
 
   async searchAssets(query: string): Promise<CoinCapAsset[]> {
-    try {
-      const response = await this.fetchWithAuth(
-        `${this.baseUrl}/assets?search=${encodeURIComponent(query)}&limit=10`
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data: CoinCapResponse = await response.json();
-      return Array.isArray(data.data) ? data.data : [];
-    } catch (error) {
-      console.error('Error searching assets, using fallback:', error);
-      
-      // Return fallback data that matches the query
-      const upperQuery = query.toUpperCase();
-      return Object.values(MOCK_PRICE_DATA).filter(asset => 
-        asset.symbol.includes(upperQuery) || 
-        asset.name.toLowerCase().includes(query.toLowerCase())
-      );
-    }
+    console.log(`Searching assets for: ${query} (using mock data)`);
+    
+    // Return fallback data that matches the query
+    const upperQuery = query.toUpperCase();
+    return Object.values(MOCK_PRICE_DATA).filter(asset => 
+      asset.symbol.includes(upperQuery) || 
+      asset.name.toLowerCase().includes(query.toLowerCase())
+    );
   }
 
   async getAssetBySymbol(symbol: string): Promise<CoinCapAsset | null> {
-    try {
-      const response = await this.fetchWithAuth(
-        `${this.baseUrl}/assets?search=${encodeURIComponent(symbol)}&limit=1`
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data: CoinCapResponse = await response.json();
-      const assets = Array.isArray(data.data) ? data.data : [];
-      
-      // Find exact symbol match
-      const exactMatch = assets.find(asset => 
-        asset.symbol.toLowerCase() === symbol.toLowerCase()
-      );
-      
-      return exactMatch || null;
-    } catch (error) {
-      console.error('Error getting asset by symbol, using fallback:', error);
-      return this.getFallbackData(symbol);
-    }
+    console.log(`Getting asset by symbol: ${symbol} (using mock data)`);
+    return this.getFallbackData(symbol);
   }
 
   async getAssetById(id: string): Promise<CoinCapAsset | null> {
-    try {
-      const response = await this.fetchWithAuth(`${this.baseUrl}/assets/${id}`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data: CoinCapResponse = await response.json();
-      return data.data as CoinCapAsset;
-    } catch (error) {
-      console.error('Error getting asset by ID, using fallback:', error);
-      
-      // Try to find by ID in fallback data
-      const fallbackAsset = Object.values(MOCK_PRICE_DATA).find(asset => asset.id === id);
-      return fallbackAsset || null;
-    }
+    console.log(`Getting asset by ID: ${id} (using mock data)`);
+    
+    // Try to find by ID in fallback data
+    const fallbackAsset = Object.values(MOCK_PRICE_DATA).find(asset => asset.id === id);
+    return fallbackAsset || null;
   }
 
   async getMultipleAssets(symbols: string[]): Promise<CoinCapAsset[]> {
-    try {
-      const promises = symbols.map(symbol => this.getAssetBySymbol(symbol));
-      const results = await Promise.all(promises);
-      return results.filter(asset => asset !== null) as CoinCapAsset[];
-    } catch (error) {
-      console.error('Error getting multiple assets, using fallback:', error);
-      
-      // Return fallback data for requested symbols
-      return symbols
-        .map(symbol => this.getFallbackData(symbol))
-        .filter(asset => asset !== null) as CoinCapAsset[];
-    }
+    console.log(`Getting multiple assets: ${symbols.join(', ')} (using mock data)`);
+    
+    // Return fallback data for requested symbols
+    return symbols
+      .map(symbol => this.getFallbackData(symbol))
+      .filter(asset => asset !== null) as CoinCapAsset[];
   }
 }
 
