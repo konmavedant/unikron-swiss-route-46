@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Clock, DollarSign, Shield, ArrowRight, RefreshCw, TrendingUp, Activity, Droplets } from "lucide-react";
@@ -6,17 +7,15 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePrices } from "@/hooks/usePrices";
-import type { BlockchainType } from "./BlockchainSelector";
 
 interface RoutePreviewProps {
   fromToken: { symbol: string; chain: string; id?: string };
   toToken: { symbol: string; chain: string; id?: string };
   amount: string;
   isCrossChain: boolean;
-  blockchain: BlockchainType;
 }
 
-const RoutePreview = ({ fromToken, toToken, amount, isCrossChain, blockchain }: RoutePreviewProps) => {
+const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreviewProps) => {
   const symbols = useMemo(() => [fromToken.symbol, toToken.symbol], [fromToken.symbol, toToken.symbol]);
   const { getPriceData, getLiquidityInfo, getVolumeInfo, getTradingActivity, refreshPrices, loading } = usePrices(symbols);
   
@@ -64,10 +63,6 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain, blockchain }: 
   const handleRefresh = () => {
     refreshPrices();
   };
-
-  const getNetworkDisplayName = () => {
-    return blockchain === 'solana' ? 'Solana' : 'Ethereum';
-  };
   
   return (
     <div className="space-y-6">
@@ -76,7 +71,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain, blockchain }: 
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-xl font-semibold text-gray-900">
-              Live Exchange Rate - {getNetworkDisplayName()}
+              Live Exchange Rate
             </CardTitle>
             <Button
               variant="ghost"
@@ -176,7 +171,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain, blockchain }: 
               <span className="text-gray-600">Estimated Time</span>
             </div>
             <span className="font-medium text-gray-900">
-              {blockchain === 'solana' ? "~5 seconds" : (isCrossChain ? "2-5 minutes" : "~30 seconds")}
+              {isCrossChain ? "2-5 minutes" : "~30 seconds"}
             </span>
           </div>
 
@@ -186,7 +181,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain, blockchain }: 
               <span className="text-gray-600">MEV Protection</span>
             </div>
             <Badge variant="secondary" className="bg-green-100 text-green-700">
-              {blockchain === 'solana' ? 'Built-in' : 'Active'}
+              Active
             </Badge>
           </div>
 
@@ -219,9 +214,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain, blockchain }: 
             
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Network Fee</span>
-              <span className="text-gray-900">
-                {blockchain === 'solana' ? '~0.0001 SOL' : `${mockFees} ${fromToken.symbol}`}
-              </span>
+              <span className="text-gray-900">{mockFees} {fromToken.symbol}</span>
             </div>
             
             {isCrossChain && (

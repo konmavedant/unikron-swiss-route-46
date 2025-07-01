@@ -5,6 +5,7 @@ import {
   SolflareWalletAdapter,
   TorusWalletAdapter,
   LedgerWalletAdapter,
+  SolletWalletAdapter,
 } from '@solana/wallet-adapter-wallets';
 
 // Solana network configuration
@@ -30,6 +31,7 @@ export const SOLANA_WALLETS = [
   new SolflareWalletAdapter(),
   new TorusWalletAdapter(),
   new LedgerWalletAdapter(),
+  new SolletWalletAdapter(),
 ];
 
 // Program addresses (update these when you deploy your Solana program)
