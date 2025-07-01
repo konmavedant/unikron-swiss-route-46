@@ -11,6 +11,7 @@ import SwapInterface from "@/components/SwapInterface";
 import RoutePreview from "@/components/RoutePreview";
 import WalletConnector from "@/components/WalletConnector";
 import BlockchainSelector from "@/components/BlockchainSelector";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 interface TokenType {
   symbol: string;
@@ -63,12 +64,16 @@ const RoutingApp = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <BlockchainSelector />
+              <ErrorBoundary>
+                <BlockchainSelector />
+              </ErrorBoundary>
               <Button variant="outline" size="sm">
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </Button>
-              <WalletConnector isConnected={isConnected} onConnectionChange={setIsConnected} />
+              <ErrorBoundary>
+                <WalletConnector isConnected={isConnected} onConnectionChange={setIsConnected} />
+              </ErrorBoundary>
             </div>
           </div>
         </div>
@@ -102,12 +107,14 @@ const RoutingApp = () => {
                 </p>
               </CardHeader>
               <CardContent className="space-y-6">
-                <TokenSelector
-                  label="From"
-                  token={fromToken}
-                  onTokenChange={handleFromTokenChange}
-                  showBalance={true}
-                />
+                <ErrorBoundary>
+                  <TokenSelector
+                    label="From"
+                    token={fromToken}
+                    onTokenChange={handleFromTokenChange}
+                    showBalance={true}
+                  />
+                </ErrorBoundary>
                 
                 <div className="flex justify-center">
                   <Button
@@ -124,23 +131,27 @@ const RoutingApp = () => {
                   </Button>
                 </div>
 
-                <TokenSelector
-                  label="To"
-                  token={toToken}
-                  onTokenChange={handleToTokenChange}
-                  showBalance={false}
-                />
+                <ErrorBoundary>
+                  <TokenSelector
+                    label="To"
+                    token={toToken}
+                    onTokenChange={handleToTokenChange}
+                    showBalance={false}
+                  />
+                </ErrorBoundary>
 
-                <SwapInterface
-                  amount={amount}
-                  onAmountChange={setAmount}
-                  recipientAddress={recipientAddress}
-                  onRecipientChange={setRecipientAddress}
-                  isCrossChain={isCrossChain}
-                  isConnected={isConnected}
-                  fromToken={fromToken}
-                  toToken={toToken}
-                />
+                <ErrorBoundary>
+                  <SwapInterface
+                    amount={amount}
+                    onAmountChange={setAmount}
+                    recipientAddress={recipientAddress}
+                    onRecipientChange={setRecipientAddress}
+                    isCrossChain={isCrossChain}
+                    isConnected={isConnected}
+                    fromToken={fromToken}
+                    toToken={toToken}
+                  />
+                </ErrorBoundary>
               </CardContent>
             </Card>
           </motion.div>
@@ -151,12 +162,14 @@ const RoutingApp = () => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
-            <RoutePreview
-              fromToken={fromToken}
-              toToken={toToken}
-              amount={amount}
-              isCrossChain={isCrossChain}
-            />
+            <ErrorBoundary>
+              <RoutePreview
+                fromToken={fromToken}
+                toToken={toToken}
+                amount={amount}
+                isCrossChain={isCrossChain}
+              />
+            </ErrorBoundary>
           </motion.div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,11 +30,17 @@ const SwapInterface = ({
 }: SwapInterfaceProps) => {
   const { getPriceData, fetchPrices } = usePrices([fromToken.symbol]);
   const { selectedBlockchain, isSolana, isEthereum } = useBlockchain();
+  const [priceError, setPriceError] = useState(false);
+  
   const priceData = getPriceData(fromToken.symbol);
 
   useEffect(() => {
     if (fromToken.symbol) {
-      fetchPrices([fromToken.symbol]);
+      setPriceError(false);
+      fetchPrices([fromToken.symbol]).catch((error) => {
+        console.error('Failed to fetch prices:', error);
+        setPriceError(true);
+      });
     }
   }, [fromToken.symbol, fetchPrices]);
 
@@ -42,7 +48,7 @@ const SwapInterface = ({
     onAmountChange(fromToken.balance || "0");
   };
 
-  const usdValue = amount && priceData ? 
+  const usdValue = amount && priceData && !priceError ? 
     (parseFloat(amount) * priceData.price).toFixed(2) : "0.00";
 
   // Validate addresses based on blockchain
@@ -109,9 +115,13 @@ const SwapInterface = ({
               MAX
             </Button>
           </div>
-          {amount && priceData && (
+          {amount && (
             <div className="mt-2 text-sm text-gray-500">
-              ≈ ${usdValue} USD
+              {priceError ? (
+                <span className="text-yellow-600">Price data unavailable</span>
+              ) : (
+                <span>≈ ${usdValue} USD</span>
+              )}
             </div>
           )}
         </CardContent>
