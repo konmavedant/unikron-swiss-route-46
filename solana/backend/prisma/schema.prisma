@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(uuid())
+  walletAddress String        @unique
+  createdAt     DateTime      @default(now())
+  tradeIntents  TradeIntent[]
+}
+
+model TradeIntent {
+  id         Int         @id @default(autoincrement())
+  user       User        @relation(fields: [userId], references: [id])
+  userId     String
+  tokenIn    String
+  tokenOut   String
+  amountIn   BigInt
+  minOut     BigInt
+  expiry     DateTime
+  nonce      BigInt
+  routeHash  String
+  relayerFee BigInt
+  relayer    String
+  intentHash String      @unique
+  signature  String
+  status     String      @default("draft")
+  createdAt  DateTime    @default(now())
+  swapCommit SwapCommit?
+  swapReveal SwapReveal?
+  feeSplit   FeeSplit?
+}
+
+model SwapCommit {
+  id           String      @id @default(uuid())
+  intent       TradeIntent @relation(fields: [intentId], references: [id])
+  intentId     Int         @unique
+  commitmentTx String
+  createdAt    DateTime    @default(now())
+}
+
+model SwapReveal {
+  id                   String      @id @default(uuid())
+  intent               TradeIntent @relation(fields: [intentId], references: [id])
+  intentId             Int         @unique
+  revealTx             String
+  settlementSuccessful Boolean
+  createdAt            DateTime    @default(now())
+}
+
+model FeeSplit {
+  id              Int         @id @default(autoincrement())
+  tradeIntent     TradeIntent @relation(fields: [intentId], references: [id])
+  intentId        Int         @unique
+  liquidityAmount BigInt
+  protocolAmount  BigInt
+  bountyAmount    BigInt
+  createdAt       DateTime    @default(now())
+}

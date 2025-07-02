@@ -1,0 +1,9 @@
+.DS_Store
+node_modules
+.yarn
+
+/src/generated/prisma
+/node_modules
+
+.env*
+
