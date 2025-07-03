@@ -16,18 +16,13 @@ interface RoutePreviewProps {
 }
 
 const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreviewProps) => {
-  const { getPriceData, fetchPrices, loading } = usePrices([fromToken.symbol, toToken.symbol]);
+  const { getPriceData, loading, refreshPrices, isDataStale } = usePrices([fromToken.symbol, toToken.symbol]);
   const { isSolana, isEthereum } = useBlockchain();
   
   const fromPriceData = getPriceData(fromToken.symbol);
   const toPriceData = getPriceData(toToken.symbol);
-
-  useEffect(() => {
-    const symbols = [fromToken.symbol, toToken.symbol].filter(Boolean);
-    if (symbols.length > 0) {
-      fetchPrices(symbols);
-    }
-  }, [fromToken.symbol, toToken.symbol, fetchPrices]);
+  const isFromStale = isDataStale(fromToken.symbol);
+  const isToStale = isDataStale(toToken.symbol);
 
   const exchangeRate = fromPriceData && toPriceData ? 
     (fromPriceData.price / toPriceData.price) : 0;
@@ -64,8 +59,11 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
   };
 
   const handleRefresh = () => {
-    fetchPrices([fromToken.symbol, toToken.symbol]);
+    console.log('Manual refresh requested from RoutePreview');
+    refreshPrices();
   };
+
+  const shouldShowRefresh = isFromStale || isToStale || loading;
   
   return (
     <div className="space-y-6">
@@ -76,13 +74,18 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
             <CardTitle className="text-xl font-semibold text-gray-900 flex items-center space-x-2">
               <span>Live Exchange Rate</span>
               {isSolana && <Zap className="h-4 w-4 text-yellow-500" />}
+              {(isFromStale || isToStale) && (
+                <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
+                  Stale Data
+                </span>
+              )}
             </CardTitle>
             <Button
               variant="ghost"
               size="sm"
               onClick={handleRefresh}
               disabled={loading}
-              className="text-gray-500 hover:text-gray-700"
+              className={`text-gray-500 hover:text-gray-700 ${shouldShowRefresh ? 'visible' : 'invisible'}`}
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
@@ -90,7 +93,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-center py-4">
-            {loading ? (
+            {loading && !fromPriceData && !toPriceData ? (
               <div className="text-xl text-gray-500">Loading rates...</div>
             ) : exchangeRate ? (
               <>
@@ -98,12 +101,25 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
                   1 {fromToken.symbol} ≈ {exchangeRate.toFixed(6)} {toToken.symbol}
                 </div>
                 <div className="text-sm text-gray-500 space-y-1">
-                  <div>{fromToken.symbol}: ${fromPriceData?.price.toFixed(4)}</div>
-                  <div>{toToken.symbol}: ${toPriceData?.price.toFixed(4)}</div>
+                  <div className={isFromStale ? 'text-orange-500' : ''}>
+                    {fromToken.symbol}: ${fromPriceData?.price.toFixed(4)}
+                    {isFromStale && ' (stale)'}
+                  </div>
+                  <div className={isToStale ? 'text-orange-500' : ''}>
+                    {toToken.symbol}: ${toPriceData?.price.toFixed(4)}
+                    {isToStale && ' (stale)'}
+                  </div>
                 </div>
+                {(isFromStale || isToStale) && (
+                  <div className="text-xs text-orange-600 mt-2">
+                    Prices update every minute. Click refresh for latest data.
+                  </div>
+                )}
               </>
             ) : (
-              <div className="text-xl text-gray-500">Unable to fetch rates</div>
+              <div className="text-xl text-gray-500">
+                {loading ? 'Loading rates...' : 'Unable to fetch rates'}
+              </div>
             )}
           </div>
           
@@ -122,6 +138,7 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
               {fromPriceData && (
                 <div className="text-sm text-gray-500 mt-1">
                   ≈ ${(parseFloat(amount) * fromPriceData.price).toFixed(2)} USD
+                  {isFromStale && ' (estimated)'}
                 </div>
               )}
             </motion.div>
@@ -185,6 +202,10 @@ const RoutePreview = ({ fromToken, toToken, amount, isCrossChain }: RoutePreview
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">UNIKRON Fee</span>
               <span className="text-green-600">0.00% (Launch Promo)</span>
+            </div>
+
+            <div className="text-xs text-gray-500 border-t pt-2">
+              Prices refresh automatically every minute via DexScreener API
             </div>
           </div>
         </CardContent>
