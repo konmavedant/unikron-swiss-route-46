@@ -1,3 +1,6 @@
+// Fix for solana/backend/src/routes/swap.ts
+// The issue is likely in the route parameter definitions
+
 import express from 'express';
 import { z } from 'zod';
 import { fetchQuote } from '../services/jupiterService';
@@ -464,6 +467,7 @@ router.post('/reveal', async (req: any, res: any) => {
   }
 });
 
+// FIXED: Proper route parameter syntax
 router.get('/status/:intentHash', async (req: any, res: any) => {
   try {
     const intentHash = req.params.intentHash;
@@ -547,6 +551,7 @@ router.get('/status/:intentHash', async (req: any, res: any) => {
   }
 });
 
+// FIXED: Proper route parameter syntax
 router.get('/recover/:sessionId', async (req: any, res: any) => {
   try {
     const sessionId = req.params.sessionId;

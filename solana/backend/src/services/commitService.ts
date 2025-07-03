@@ -11,7 +11,7 @@ import { Buffer } from 'buffer';
 
 // Instruction discriminators (8 bytes each)
 const COMMIT_TRADE_DISCRIMINATOR = Buffer.from([0x8a, 0x9c, 0x44, 0xd2, 0x15, 0x6e, 0x7f, 0x91]);
-const REVEAL_TRADE_DISCRIMINATOR = Buffer.from([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
+//const REVEAL_TRADE_DISCRIMINATOR = Buffer.from([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
 
 // Account discriminators
 const SWAP_INTENT_DISCRIMINATOR = Buffer.from([242, 212, 249, 216, 109, 94, 238, 134]);
@@ -111,10 +111,7 @@ export async function validateProgramSetup(): Promise<boolean> {
 }
 
 // Helper function to derive PDA
-export function deriveSwapIntentPda(
-  user: PublicKey,
-  nonce: number
-): [PublicKey, number] {
+function deriveSwapIntentPda(user: PublicKey, nonce: number): [PublicKey, number] {
   const nonceBuffer = Buffer.alloc(8);
   nonceBuffer.writeBigUInt64LE(BigInt(nonce), 0);
 
@@ -136,7 +133,6 @@ function createCommitTradeInstruction(
   nonce: number,
   expiry: number
 ): TransactionInstruction {
-  // Manual serialization instead of using borsh
   const buffer = Buffer.alloc(56); // 8 + 32 + 8 + 8 = 56 bytes
   let offset = 0;
   
@@ -154,14 +150,12 @@ function createCommitTradeInstruction(
   
   // Write expiry (8 bytes, little endian)
   buffer.writeBigUInt64LE(BigInt(expiry), offset);
-  offset += 8;
 
   return new TransactionInstruction({
     keys: [
-      { pubkey: user, isSigner: true, isWritable: false },
       { pubkey: swapIntentPda, isSigner: false, isWritable: true },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false }
+      { pubkey: user, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
     ],
     programId: PROGRAM_ID,
     data: buffer
@@ -178,11 +172,6 @@ export async function commitIntent(
   try {
     console.log('Starting commit process...');
 
-    // Get current time in seconds
-    const currentTimeInSeconds = Math.floor(Date.now() / 1000);
-    console.log('Current time (seconds):', currentTimeInSeconds);
-    console.log('Provided expiry:', expiry);
-
     // Validate inputs
     if (!PublicKey.isOnCurve(user)) {
       throw new Error('Invalid user public key');
@@ -190,26 +179,6 @@ export async function commitIntent(
 
     if (!/^[0-9a-fA-F]{64}$/.test(intentHash)) {
       throw new Error('Intent hash must be 64-character hex string');
-    }
-
-    if (nonce < 0 || nonce > Number.MAX_SAFE_INTEGER) {
-      throw new Error(`Invalid nonce value: ${nonce}`);
-    }
-
-    // Enhanced expiry validation
-    if (expiry <= currentTimeInSeconds) {
-      console.error('Expiry validation failed:', {
-        currentTime: currentTimeInSeconds,
-        providedExpiry: expiry,
-        differenceInSeconds: expiry - currentTimeInSeconds
-      });
-      throw new Error(`Expiry must be in the future. Current time: ${currentTimeInSeconds}, Provided expiry: ${expiry}`);
-    }
-
-    // Validate program setup
-    const isValid = await validateProgramSetup();
-    if (!isValid) {
-      throw new Error('Program validation failed');
     }
 
     const connection = getSolanaConnection();
@@ -223,15 +192,14 @@ export async function commitIntent(
     }
 
     // Derive PDA for the swap intent
-    const [swapIntentPda, bump] = deriveSwapIntentPda(userPub, nonce);
+    const [swapIntentPda] = deriveSwapIntentPda(userPub, nonce);
 
     console.log('Commit transaction parameters:', {
       swapIntentPda: swapIntentPda.toBase58(),
       user: userPub.toBase58(),
       nonce,
       expiry,
-      intentHash,
-      bump
+      intentHash
     });
 
     // Create transaction
@@ -247,9 +215,8 @@ export async function commitIntent(
     transaction.add(commitInstruction);
 
     // Get recent blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+    const { blockhash } = await connection.getLatestBlockhash('confirmed');
     transaction.recentBlockhash = blockhash;
-    transaction.lastValidBlockHeight = lastValidBlockHeight;
     transaction.feePayer = wallet.publicKey;
 
     // Sign and send transaction
@@ -259,18 +226,10 @@ export async function commitIntent(
       connection,
       transaction,
       [wallet],
-      {
-        commitment: 'confirmed',
-        skipPreflight: false,
-      }
+      { commitment: 'confirmed' }
     );
 
-    console.log('✅ Commit transaction successful:', {
-      signature: txSignature,
-      pda: swapIntentPda.toBase58(),
-      timestamp: currentTimeInSeconds
-    });
-
+    console.log('✅ Commit transaction successful:', txSignature);
     return txSignature;
 
   } catch (error) {

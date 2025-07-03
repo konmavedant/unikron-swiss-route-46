@@ -3,6 +3,7 @@
 import nacl from 'tweetnacl';
 import { encodeBase64, decodeUTF8 } from 'tweetnacl-util';
 import { TradeIntent } from '../types/TradeIntent';
+import { createHash } from 'crypto';
 
 /**
  * Hash a TradeIntent using tweetnacl (as specified in requirements)
@@ -10,7 +11,7 @@ import { TradeIntent } from '../types/TradeIntent';
  */
 export function hashTradeIntent(intent: TradeIntent): string {
   try {
-    // Create a deterministic string representation
+    // Create a deterministic string representation (same as frontend)
     const intentString = [
       intent.user,
       intent.tokenIn,
@@ -24,14 +25,10 @@ export function hashTradeIntent(intent: TradeIntent): string {
       intent.relayer
     ].join('|');
 
-    // Convert to Uint8Array for hashing
-    const data = decodeUTF8(intentString);
+    // Hash using Node.js crypto
+    const hash = createHash('sha256').update(intentString, 'utf8').digest('hex');
     
-    // Hash using nacl
-    const hash = nacl.hash(data);
-    
-    // Return as hex string (first 32 bytes for 256-bit hash)
-    return Buffer.from(hash.slice(0, 32)).toString('hex');
+    return hash;
   } catch (error) {
     throw new Error(`Failed to hash trade intent: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
@@ -65,7 +62,7 @@ export function hashRoute(route: any): string {
       routePlan: route.routePlan
     };
     
-    return hashData(JSON.stringify(routeData));
+    return createHash('sha256').update(JSON.stringify(routeData), 'utf8').digest('hex');
   } catch (error) {
     throw new Error(`Failed to hash route: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
