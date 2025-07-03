@@ -1,4 +1,4 @@
-// utils/sessionUtils.ts - Session Storage Utilities for Intent Recovery
+// utils/sessionUtils.ts - Simplified Session Storage Utilities
 
 import { logger } from './logger';
 import { TradeIntent } from '../types/TradeIntent';
@@ -11,16 +11,46 @@ interface SessionData {
   expiresAt: number;
 }
 
-interface SessionStorage {
-  [sessionId: string]: SessionData;
+// In-memory storage for session data
+const sessionStore: Map<string, SessionData> = new Map();
+
+// Session expiry time (1 hour)
+const SESSION_EXPIRY_MS = 60 * 60 * 1000;
+
+// Clean up expired sessions every 15 minutes
+const CLEANUP_INTERVAL = 15 * 60 * 1000;
+
+let cleanupInterval: NodeJS.Timeout | null = null;
+
+/**
+ * Start automatic cleanup of expired sessions
+ */
+function startCleanup() {
+  if (cleanupInterval) return;
+  
+  cleanupInterval = setInterval(() => {
+    cleanupExpiredSessions();
+  }, CLEANUP_INTERVAL);
 }
 
-// In-memory storage for session data
-// In production, you'd use Redis or another persistent store
-const sessionStore: SessionStorage = {};
-
-// Session expiry time (24 hours)
-const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000;
+/**
+ * Clean up expired sessions
+ */
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  let cleaned = 0;
+  
+  for (const [sessionId, sessionData] of sessionStore.entries()) {
+    if (now > sessionData.expiresAt) {
+      sessionStore.delete(sessionId);
+      cleaned++;
+    }
+  }
+  
+  if (cleaned > 0) {
+    logger.info('Cleaned up expired sessions', { count: cleaned });
+  }
+}
 
 /**
  * Save intent data to session for frontend recovery
@@ -43,20 +73,17 @@ export async function saveIntentToSession(
       expiresAt: now + SESSION_EXPIRY_MS
     };
 
-    sessionStore[sessionId] = sessionData;
+    sessionStore.set(sessionId, sessionData);
+
+    // Start cleanup if not already running
+    if (!cleanupInterval) {
+      startCleanup();
+    }
 
     logger.info('Intent saved to session', {
       sessionId,
       intentHash: data.hash,
       expiresAt: new Date(sessionData.expiresAt).toISOString()
-    });
-
-    // Clean up expired sessions periodically
-    // Clean up expired sessions
-    Object.entries(sessionStore).forEach(([id, data]) => {
-      if (Date.now() > data.expiresAt) {
-        delete sessionStore[id];
-      }
     });
 
     return true;
@@ -74,7 +101,7 @@ export async function saveIntentToSession(
  */
 export async function getIntentFromSession(sessionId: string): Promise<SessionData | null> {
   try {
-    const sessionData = sessionStore[sessionId];
+    const sessionData = sessionStore.get(sessionId);
     
     if (!sessionData) {
       logger.warn('Session not found', { sessionId });
@@ -87,7 +114,7 @@ export async function getIntentFromSession(sessionId: string): Promise<SessionDa
         sessionId, 
         expiredAt: new Date(sessionData.expiresAt).toISOString() 
       });
-      delete sessionStore[sessionId];
+      sessionStore.delete(sessionId);
       return null;
     }
 
@@ -107,16 +134,16 @@ export async function getIntentFromSession(sessionId: string): Promise<SessionDa
 }
 
 /**
- * Remove intent from session (e.g., after successful commit)
+ * Remove intent from session
  */
 export async function removeIntentFromSession(sessionId: string): Promise<boolean> {
   try {
-    if (sessionStore[sessionId]) {
-      delete sessionStore[sessionId];
+    const existed = sessionStore.has(sessionId);
+    if (existed) {
+      sessionStore.delete(sessionId);
       logger.info('Intent removed from session', { sessionId });
-      return true;
     }
-    return false;
+    return existed;
   } catch (error) {
     logger.error('Failed to remove intent from session', {
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -127,14 +154,14 @@ export async function removeIntentFromSession(sessionId: string): Promise<boolea
 }
 
 /**
- * Update session data (e.g., after signing)
+ * Update session data
  */
 export async function updateSessionData(
   sessionId: string,
   updates: Partial<Pick<SessionData, 'intent' | 'hash' | 'route'>>
 ): Promise<boolean> {
   try {
-    const existingSession = sessionStore[sessionId];
+    const existingSession = sessionStore.get(sessionId);
     
     if (!existingSession) {
       logger.warn('Cannot update non-existent session', { sessionId });
@@ -144,16 +171,18 @@ export async function updateSessionData(
     // Check if session has expired
     if (Date.now() > existingSession.expiresAt) {
       logger.warn('Cannot update expired session', { sessionId });
-      delete sessionStore[sessionId];
+      sessionStore.delete(sessionId);
       return false;
     }
 
     // Update session data
-    sessionStore[sessionId] = {
+    const updatedSession: SessionData = {
       ...existingSession,
       ...updates,
       timestamp: Date.now() // Update timestamp
     };
+    
+    sessionStore.set(sessionId, updatedSession);
 
     logger.info('Session updated', { sessionId });
     return true;
@@ -167,13 +196,13 @@ export async function updateSessionData(
 }
 
 /**
- * Get all active sessions for a user (by wallet address)
+ * Get all active sessions for a user
  */
 export async function getUserSessions(userWallet: string): Promise<{ sessionId: string; data: SessionData }[]> {
   try {
     const userSessions: { sessionId: string; data: SessionData }[] = [];
     
-    for (const [sessionId, sessionData] of Object.entries(sessionStore)) {
+    for (const [sessionId, sessionData] of sessionStore.entries()) {
       // Check if session hasn't expired and belongs to the user
       if (Date.now() <= sessionData.expiresAt && sessionData.intent.user === userWallet) {
         userSessions.push({ sessionId, data: sessionData });
@@ -194,3 +223,63 @@ export async function getUserSessions(userWallet: string): Promise<{ sessionId: 
     return [];
   }
 }
+
+/**
+ * Get session statistics
+ */
+export async function getSessionStats() {
+  try {
+    const now = Date.now();
+    let active = 0;
+    let expired = 0;
+    
+    for (const sessionData of sessionStore.values()) {
+      if (now <= sessionData.expiresAt) {
+        active++;
+      } else {
+        expired++;
+      }
+    }
+    
+    return {
+      total: sessionStore.size,
+      active,
+      expired
+    };
+  } catch (error) {
+    logger.error('Failed to get session stats', {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+    return { total: 0, active: 0, expired: 0 };
+  }
+}
+
+/**
+ * Clear all sessions
+ */
+export async function clearAllSessions(): Promise<void> {
+  try {
+    const count = sessionStore.size;
+    sessionStore.clear();
+    logger.info('All sessions cleared', { count });
+  } catch (error) {
+    logger.error('Failed to clear sessions', {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+});
+
+process.on('SIGINT', () => {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+});

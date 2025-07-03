@@ -1,180 +1,30 @@
-// services/queueService.ts - Webhook relay queue implementation
+// services/queueService.ts - Simplified in-memory queue implementation
 
-import Bull, { Queue, Job } from 'bull';
-import axios from 'axios';
 import { logger } from '../utils/logger';
-import { config } from '../config/env';
 import prisma from '../db/prisma';
 
 // Job data interfaces
 interface RevealJobData {
   intentHash: string;
-  webhookUrl?: string;
-  maxRetries?: number;
   delaySeconds?: number;
+  maxRetries?: number;
+  createdAt: number;
+  scheduledFor: number;
+  retryCount: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
 }
 
-interface WebhookPayload {
-  intentHash: string;
-  status: string;
-  timestamp: string;
-  action: 'reveal_ready';
-}
+// In-memory job storage
+const jobQueue: Map<string, RevealJobData> = new Map();
+const processingJobs: Set<string> = new Set();
 
-// Initialize Redis connection and queue
-const redisConfig = {
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-    password: process.env.REDIS_PASSWORD,
-    db: parseInt(process.env.REDIS_DB || '0'),
-  },
-  defaultJobOptions: {
-    removeOnComplete: 100, // Keep last 100 completed jobs
-    removeOnFail: 50,      // Keep last 50 failed jobs
-    attempts: 3,           // Retry failed jobs 3 times
-    backoff: {
-      type: 'exponential',
-      delay: 2000,         // Start with 2 second delay
-    },
-  },
-};
+// Process jobs every 5 seconds
+const PROCESS_INTERVAL = 5000;
+let processingInterval: NodeJS.Timeout | null = null;
 
-// Create queues
-export const revealQueue: Queue<RevealJobData> = new Bull('reveal-queue', redisConfig);
-export const webhookQueue: Queue<WebhookPayload> = new Bull('webhook-queue', redisConfig);
-
-// Process reveal jobs
-revealQueue.process('reveal-intent', async (job: Job<RevealJobData>) => {
-  const { intentHash, webhookUrl, delaySeconds = 0 } = job.data;
-  
-  logger.info('Processing reveal job', { intentHash, jobId: job.id });
-
-  try {
-    // Wait for specified delay (useful for timing reveals)
-    if (delaySeconds > 0) {
-      logger.info('Delaying reveal execution', { intentHash, delaySeconds });
-      await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
-    }
-
-    // Check if intent is still in committed state
-    const intent = await prisma.tradeIntent.findUnique({
-      where: { intentHash },
-      include: { 
-        swapCommit: true, 
-        swapReveal: true 
-      }
-    });
-
-    if (!intent) {
-      throw new Error(`Intent not found: ${intentHash}`);
-    }
-
-    if (!intent.swapCommit) {
-      throw new Error(`Intent not committed yet: ${intentHash}`);
-    }
-
-    if (intent.swapReveal) {
-      logger.warn('Intent already revealed, skipping', { 
-        intentHash, 
-        revealTx: intent.swapReveal.revealTx 
-      });
-      return { status: 'already_revealed', tx: intent.swapReveal.revealTx };
-    }
-
-    // Check if intent has expired
-    const now = new Date();
-    if (intent.expiry < now) {
-      logger.warn('Intent expired, cannot reveal', { 
-        intentHash, 
-        expiry: intent.expiry,
-        now 
-      });
-      
-      // Update status to expired
-      await prisma.tradeIntent.update({
-        where: { intentHash },
-        data: { status: 'expired' }
-      });
-      
-      throw new Error(`Intent expired: ${intentHash}`);
-    }
-
-    // Trigger webhook if URL provided
-    if (webhookUrl) {
-      await webhookQueue.add('notify-reveal-ready', {
-        intentHash,
-        status: 'reveal_ready',
-        timestamp: new Date().toISOString(),
-        action: 'reveal_ready'
-      }, {
-        attempts: 2,
-        delay: 1000
-      });
-    }
-
-    // Note: Actual reveal execution would be handled by external relayer
-    // This queue just prepares and notifies that reveal is ready
-    
-    logger.info('Reveal job processed successfully', { intentHash });
-    
-    return { 
-      status: 'reveal_ready',
-      intentHash,
-      timestamp: new Date().toISOString()
-    };
-
-  } catch (error) {
-    logger.error('Reveal job failed', { 
-      intentHash, 
-      error: error instanceof Error ? error.message : 'Unknown error',
-      jobId: job.id 
-    });
-    throw error;
-  }
-});
-
-// Process webhook notifications
-webhookQueue.process('notify-reveal-ready', async (job: Job<WebhookPayload>) => {
-  const { intentHash, webhookUrl } = job.data as any;
-  
-  if (!webhookUrl) {
-    logger.warn('No webhook URL provided, skipping notification', { intentHash });
-    return;
-  }
-
-  try {
-    logger.info('Sending webhook notification', { intentHash, webhookUrl });
-
-    const response = await axios.post(webhookUrl, job.data, {
-      timeout: 10000, // 10 second timeout
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'UNIKRON-Queue/1.0.0',
-        'X-Intent-Hash': intentHash
-      }
-    });
-
-    logger.info('Webhook notification sent successfully', { 
-      intentHash, 
-      webhookUrl, 
-      status: response.status 
-    });
-
-    return { status: 'sent', response: response.status };
-
-  } catch (error: any) {
-    logger.error('Webhook notification failed', { 
-      intentHash, 
-      webhookUrl,
-      error: error.message,
-      status: error.response?.status
-    });
-    throw error;
-  }
-});
-
-// Queue management functions
+/**
+ * Simple in-memory queue service for reveal jobs
+ */
 export class QueueService {
   /**
    * Add reveal job to queue
@@ -182,29 +32,38 @@ export class QueueService {
   static async queueReveal(
     intentHash: string, 
     options: {
-      webhookUrl?: string;
       delaySeconds?: number;
       maxRetries?: number;
     } = {}
-  ): Promise<Job<RevealJobData>> {
+  ): Promise<string> {
     try {
-      const job = await revealQueue.add('reveal-intent', {
+      const now = Date.now();
+      const jobId = `${intentHash}-${now}`;
+      
+      const job: RevealJobData = {
         intentHash,
-        ...options
-      }, {
-        delay: (options.delaySeconds || 0) * 1000,
-        attempts: options.maxRetries || 3,
-        removeOnComplete: true,
-        removeOnFail: false
-      });
+        delaySeconds: options.delaySeconds || 0,
+        maxRetries: options.maxRetries || 3,
+        createdAt: now,
+        scheduledFor: now + ((options.delaySeconds || 0) * 1000),
+        retryCount: 0,
+        status: 'pending'
+      };
+
+      jobQueue.set(jobId, job);
+
+      // Start processing if not already running
+      if (!processingInterval) {
+        this.startProcessing();
+      }
 
       logger.info('Reveal job queued', { 
         intentHash, 
-        jobId: job.id,
-        delay: options.delaySeconds 
+        jobId,
+        scheduledFor: new Date(job.scheduledFor).toISOString()
       });
 
-      return job;
+      return jobId;
     } catch (error) {
       logger.error('Failed to queue reveal job', { 
         intentHash, 
@@ -219,15 +78,17 @@ export class QueueService {
    */
   static async cancelReveal(intentHash: string): Promise<boolean> {
     try {
-      const jobs = await revealQueue.getJobs(['waiting', 'delayed', 'active']);
-      const targetJobs = jobs.filter(job => job.data.intentHash === intentHash);
-
-      for (const job of targetJobs) {
-        await job.remove();
-        logger.info('Reveal job cancelled', { intentHash, jobId: job.id });
+      let cancelled = false;
+      
+      for (const [jobId, job] of jobQueue.entries()) {
+        if (job.intentHash === intentHash && job.status === 'pending') {
+          jobQueue.delete(jobId);
+          cancelled = true;
+          logger.info('Reveal job cancelled', { intentHash, jobId });
+        }
       }
 
-      return targetJobs.length > 0;
+      return cancelled;
     } catch (error) {
       logger.error('Failed to cancel reveal job', { 
         intentHash, 
@@ -242,37 +103,21 @@ export class QueueService {
    */
   static async getQueueStats() {
     try {
-      const [revealStats, webhookStats] = await Promise.all([
-        {
-          waiting: await revealQueue.getWaiting(),
-          active: await revealQueue.getActive(),
-          completed: await revealQueue.getCompleted(),
-          failed: await revealQueue.getFailed(),
-          delayed: await revealQueue.getDelayed()
-        },
-        {
-          waiting: await webhookQueue.getWaiting(),
-          active: await webhookQueue.getActive(),
-          completed: await webhookQueue.getCompleted(),
-          failed: await webhookQueue.getFailed()
-        }
-      ]);
-
-      return {
-        reveal: {
-          waiting: revealStats.waiting.length,
-          active: revealStats.active.length,
-          completed: revealStats.completed.length,
-          failed: revealStats.failed.length,
-          delayed: revealStats.delayed.length
-        },
-        webhook: {
-          waiting: webhookStats.waiting.length,
-          active: webhookStats.active.length,
-          completed: webhookStats.completed.length,
-          failed: webhookStats.failed.length
-        }
+      const stats = {
+        total: jobQueue.size,
+        pending: 0,
+        processing: processingJobs.size,
+        completed: 0,
+        failed: 0
       };
+
+      for (const job of jobQueue.values()) {
+        if (job.status === 'pending') stats.pending++;
+        else if (job.status === 'completed') stats.completed++;
+        else if (job.status === 'failed') stats.failed++;
+      }
+
+      return stats;
     } catch (error) {
       logger.error('Failed to get queue stats', { 
         error: error instanceof Error ? error.message : 'Unknown error' 
@@ -282,20 +127,174 @@ export class QueueService {
   }
 
   /**
-   * Clear all jobs from queues
+   * Start processing jobs
    */
-  static async clearQueues(): Promise<void> {
-    try {
-      await Promise.all([
-        revealQueue.clean(0, 'completed'),
-        revealQueue.clean(0, 'failed'),
-        webhookQueue.clean(0, 'completed'),
-        webhookQueue.clean(0, 'failed')
-      ]);
+  private static startProcessing() {
+    if (processingInterval) return;
 
-      logger.info('Queues cleared successfully');
+    processingInterval = setInterval(async () => {
+      await this.processJobs();
+    }, PROCESS_INTERVAL);
+
+    logger.info('Queue processing started');
+  }
+
+  /**
+   * Stop processing jobs
+   */
+  static stopProcessing() {
+    if (processingInterval) {
+      clearInterval(processingInterval);
+      processingInterval = null;
+      logger.info('Queue processing stopped');
+    }
+  }
+
+  /**
+   * Process pending jobs
+   */
+  private static async processJobs() {
+    const now = Date.now();
+    
+    for (const [jobId, job] of jobQueue.entries()) {
+      // Skip if not ready or already processing
+      if (job.status !== 'pending' || 
+          job.scheduledFor > now || 
+          processingJobs.has(jobId)) {
+        continue;
+      }
+
+      // Process job
+      processingJobs.add(jobId);
+      job.status = 'processing';
+
+      try {
+        await this.processRevealJob(job);
+        job.status = 'completed';
+        
+        // Remove completed jobs after 1 hour
+        setTimeout(() => {
+          jobQueue.delete(jobId);
+        }, 60 * 60 * 1000);
+        
+      } catch (error) {
+        job.retryCount++;
+        
+        if (job.retryCount >= (job.maxRetries ?? 3)) {
+          job.status = 'failed';
+          logger.error('Job failed after max retries', { 
+            jobId, 
+            intentHash: job.intentHash,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        } else {
+          job.status = 'pending';
+          job.scheduledFor = now + (job.retryCount * 30000); // Exponential backoff
+          logger.warn('Job failed, scheduling retry', { 
+            jobId, 
+            intentHash: job.intentHash,
+            retryCount: job.retryCount,
+            nextRetry: new Date(job.scheduledFor).toISOString()
+          });
+        }
+      } finally {
+        processingJobs.delete(jobId);
+      }
+    }
+  }
+
+  /**
+   * Process a single reveal job
+   */
+  private static async processRevealJob(job: RevealJobData) {
+    logger.info('Processing reveal job', { 
+      intentHash: job.intentHash, 
+      delaySeconds: job.delaySeconds 
+    });
+
+    try {
+      // Check if intent is still in committed state
+      const intent = await prisma.tradeIntent.findUnique({
+        where: { intentHash: job.intentHash },
+        include: { 
+          swapCommit: true, 
+          swapReveal: true 
+        }
+      });
+
+      if (!intent) {
+        throw new Error(`Intent not found: ${job.intentHash}`);
+      }
+
+      if (!intent.swapCommit) {
+        throw new Error(`Intent not committed yet: ${job.intentHash}`);
+      }
+
+      if (intent.swapReveal) {
+        logger.info('Intent already revealed, skipping', { 
+          intentHash: job.intentHash, 
+          revealTx: intent.swapReveal.revealTx 
+        });
+        return;
+      }
+
+      // Check if intent has expired
+      const now = new Date();
+      if (intent.expiry < now) {
+        logger.warn('Intent expired, cannot reveal', { 
+          intentHash: job.intentHash, 
+          expiry: intent.expiry,
+          now 
+        });
+        
+        // Update status to expired
+        await prisma.tradeIntent.update({
+          where: { intentHash: job.intentHash },
+          data: { status: 'expired' }
+        });
+        
+        throw new Error(`Intent expired: ${job.intentHash}`);
+      }
+
+      // In a real implementation, this would trigger the actual reveal
+      // For now, we just log that the intent is ready for reveal
+      logger.info('Intent ready for reveal', { 
+        intentHash: job.intentHash,
+        expiry: intent.expiry.toISOString()
+      });
+
+      // Update status to indicate ready for reveal
+      await prisma.tradeIntent.update({
+        where: { intentHash: job.intentHash },
+        data: { status: 'ready_for_reveal' }
+      });
+
     } catch (error) {
-      logger.error('Failed to clear queues', { 
+      logger.error('Reveal job processing failed', { 
+        intentHash: job.intentHash, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Clear all completed and failed jobs
+   */
+  static async clearJobs(): Promise<void> {
+    try {
+      let cleared = 0;
+      
+      for (const [jobId, job] of jobQueue.entries()) {
+        if (job.status === 'completed' || job.status === 'failed') {
+          jobQueue.delete(jobId);
+          cleared++;
+        }
+      }
+
+      logger.info('Jobs cleared', { count: cleared });
+    } catch (error) {
+      logger.error('Failed to clear jobs', { 
         error: error instanceof Error ? error.message : 'Unknown error' 
       });
       throw error;
@@ -307,11 +306,8 @@ export class QueueService {
    */
   static async healthCheck(): Promise<boolean> {
     try {
-      await Promise.all([
-        revealQueue.isReady(),
-        webhookQueue.isReady()
-      ]);
-      return true;
+      const stats = await this.getQueueStats();
+      return stats.total < 10000; // Healthy if less than 10k jobs
     } catch (error) {
       logger.error('Queue health check failed', { 
         error: error instanceof Error ? error.message : 'Unknown error' 
@@ -322,13 +318,16 @@ export class QueueService {
 }
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('Shutting down queues...');
-  await Promise.all([
-    revealQueue.close(),
-    webhookQueue.close()
-  ]);
-  logger.info('Queues shut down successfully');
+process.on('SIGTERM', () => {
+  logger.info('Shutting down queue service...');
+  QueueService.stopProcessing();
+  logger.info('Queue service shut down');
+});
+
+process.on('SIGINT', () => {
+  logger.info('Shutting down queue service...');
+  QueueService.stopProcessing();
+  logger.info('Queue service shut down');
 });
 
 export default QueueService;

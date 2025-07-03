@@ -49,7 +49,6 @@ const intentSchema = z.object({
     relayerFee: z.number().int().min(0),
     relayer: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid relayer address')
   }),
-  // Optional sessionId for frontend persistence
   sessionId: z.string().optional()
 });
 
@@ -58,7 +57,7 @@ const commitSchema = z.object({
   intentHash: z.string().refine(val => ValidationUtils.isValidHash(val), 'Invalid intent hash'),
   nonce: z.number().int().min(0),
   expiry: z.number().refine(val => ValidationUtils.isValidExpiry(val), 'Invalid expiry time'),
-  enableRelay: z.boolean().optional().default(false) // For webhook relay queue
+  enableRelay: z.boolean().optional().default(false)
 });
 
 const revealSchema = z.object({
@@ -163,7 +162,6 @@ router.post('/intent', async (req: any, res: any) => {
       ));
     }
 
-    // Validate route consistency
     const { route, tradeMeta, sessionId } = parsed.data;
     if (route.inputMint !== tradeMeta.tokenIn || route.outputMint !== tradeMeta.tokenOut) {
       return res.status(400).json(createErrorResponse(
@@ -181,7 +179,6 @@ router.post('/intent', async (req: any, res: any) => {
 
     const { intent, hash } = await generateIntent(route, tradeMeta);
 
-    // Database operations in transaction
     await prisma.$transaction(async (tx) => {
       const user = await tx.user.upsert({
         where: { walletAddress: intent.user },
@@ -208,7 +205,6 @@ router.post('/intent', async (req: any, res: any) => {
       });
     });
 
-    // Save to session storage for recovery
     if (sessionId) {
       await saveIntentToSession(sessionId, { intent, hash, route });
     }
@@ -266,7 +262,6 @@ router.post('/commit', async (req: any, res: any) => {
       enableRelay: parsed.data.enableRelay
     });
 
-    // Check if intent exists and is in correct state
     const existingIntent = await prisma.tradeIntent.findUnique({
       where: { intentHash: parsed.data.intentHash },
       include: { swapCommit: true }
@@ -294,7 +289,6 @@ router.post('/commit', async (req: any, res: any) => {
       parsed.data.expiry
     );
 
-    // Update database in transaction
     await prisma.$transaction(async (txClient) => {
       await txClient.swapCommit.create({
         data: {
@@ -309,13 +303,11 @@ router.post('/commit', async (req: any, res: any) => {
       });
     });
 
-    // Add to relay queue if enabled
     if (parsed.data.enableRelay) {
       try {
         await QueueService.queueReveal(parsed.data.intentHash, {
           delaySeconds: 30
         });
-
         logger.info('Added to relay queue', { intentHash: parsed.data.intentHash });
       } catch (queueError) {
         logger.warn('Failed to add to relay queue', {
@@ -377,7 +369,6 @@ router.post('/reveal', async (req: any, res: any) => {
       expectedHash: parsed.data.expectedHash
     });
 
-    // Check if intent exists and is committed
     const existingIntent = await prisma.tradeIntent.findUnique({
       where: { intentHash: parsed.data.expectedHash },
       include: {
@@ -414,7 +405,6 @@ router.post('/reveal', async (req: any, res: any) => {
       parsed.data.signature
     );
 
-    // Update database with reveal and fee split in transaction
     await prisma.$transaction([
       prisma.swapReveal.create({
         data: {
@@ -432,7 +422,6 @@ router.post('/reveal', async (req: any, res: any) => {
         }
       }),
 
-      // Create fee split record
       prisma.feeSplit.create({
         data: {
           intentId: existingIntent.id,
@@ -505,7 +494,6 @@ router.get('/status/:intentHash', async (req: any, res: any) => {
       ));
     }
 
-    // Calculate time remaining if not expired
     const now = Math.floor(Date.now() / 1000);
     const expiryTimestamp = Math.floor(intent.expiry.getTime() / 1000);
     const timeRemaining = Math.max(0, expiryTimestamp - now);
@@ -559,7 +547,6 @@ router.get('/status/:intentHash', async (req: any, res: any) => {
   }
 });
 
-// Session recovery endpoint
 router.get('/recover/:sessionId', async (req: any, res: any) => {
   try {
     const sessionId = req.params.sessionId;
@@ -593,22 +580,20 @@ router.get('/recover/:sessionId', async (req: any, res: any) => {
   }
 });
 
-// Health check endpoint
-router.get('/health', async (req: any, res: any) => {
+router.get('/health', async (req, res) => {
   const startTime = Date.now();
 
   try {
-    // Check database connection
     await prisma.$queryRaw`SELECT 1`;
 
-    // Check basic services
     const health = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       services: {
         database: 'connected',
         jupiter: 'available',
-        solana: 'connected'
+        solana: 'connected',
+        queue: await QueueService.healthCheck() ? 'healthy' : 'unhealthy'
       },
       metrics: {
         uptime: process.uptime(),

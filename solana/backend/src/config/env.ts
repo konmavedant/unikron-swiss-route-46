@@ -48,5 +48,25 @@ export const config = {
     jupiter: 10000, // 10 seconds
     solana: 30000,  // 30 seconds
     database: 5000  // 5 seconds
+  },
+  
+  // Jupiter API configuration
+  jupiterApi: {
+    baseUrl: 'https://quote-api.jup.ag/v6',
+    timeout: 10000,
+    retries: 3
+  },
+  
+  // Fee configuration
+  fees: {
+    liquidityBps: 25, // 0.25%
+    protocolBps: 5,   // 0.05%
+    maxRelayerBps: 100 // 1% max relayer fee
+  },
+  
+  // Session configuration
+  session: {
+    expiryMs: 60 * 60 * 1000, // 1 hour
+    cleanupIntervalMs: 15 * 60 * 1000 // 15 minutes
   }
 };

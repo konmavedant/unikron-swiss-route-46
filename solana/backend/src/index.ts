@@ -22,8 +22,6 @@ const app = express();
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: false, // Disable for API
-  // Using type assertion to handle outdated type definitions
-  // crossOriginResourcePolicy is a valid option in newer helmet versions
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 } as any));
 
