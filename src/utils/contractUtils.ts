@@ -1,4 +1,3 @@
-
 // Contract ABI - Enhanced version with test functionality
 export const UNIKRON_SWAP_ROUTER_ABI = [
   // Core swap functions
@@ -214,7 +213,7 @@ export const SEPOLIA_ADDRESSES = {
   SWAP_TESTER: "0x" // UPDATE THIS AFTER DEPLOYMENT
 };
 
-// Enhanced contract configuration
+// Enhanced contract configuration with deployment support
 export const CONTRACT_CONFIG = {
   chainId: 11155111, // Sepolia chain ID
   rpcUrl: "https://sepolia.infura.io/v3/YOUR_INFURA_KEY",
@@ -234,6 +233,29 @@ export const CONTRACT_CONFIG = {
     min: "1000000000000000", // 0.001 ETH in wei
     default: "10000000000000000", // 0.01 ETH in wei
     max: "100000000000000000" // 0.1 ETH in wei
+  }
+};
+
+// Function to get current deployment addresses
+export const getDeploymentAddresses = () => {
+  try {
+    const deploymentInfo = require("../contracts/deploymentInfo.json");
+    return {
+      UNIKRON_SWAP_ROUTER: deploymentInfo.contracts.UnikronSwapRouter.address,
+      SWAP_TESTER: deploymentInfo.contracts.SwapTester.address,
+      WETH: deploymentInfo.tokens.WETH,
+      USDC: deploymentInfo.tokens.USDC,
+      UNISWAP_V2_ROUTER: deploymentInfo.externalContracts.UniswapV2Router
+    };
+  } catch (error) {
+    console.warn("Deployment info not found, using default addresses");
+    return {
+      UNIKRON_SWAP_ROUTER: "0x0000000000000000000000000000000000000000",
+      SWAP_TESTER: "0x0000000000000000000000000000000000000000",
+      WETH: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+      USDC: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      UNISWAP_V2_ROUTER: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+    };
   }
 };
 
@@ -370,12 +392,13 @@ export const validateSwapParams = (params: {
 export const DEPLOYMENT_INFO = {
   compiler: "0.8.19",
   optimization: true,
+  viaIR: true, // Important: This fixes "Stack too deep" errors
   runs: 200,
   testnet: "Sepolia",
   deploymentDate: new Date().toISOString(),
   features: [
     "Basic token swaps",
-    "ETH to token swaps",
+    "ETH to token swaps", 
     "Token to ETH swaps",
     "Cross-chain swap initiation",
     "Fee collection and distribution",
