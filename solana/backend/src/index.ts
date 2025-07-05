@@ -21,9 +21,9 @@ const app = express();
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Disable for API
+  contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' }
-} as any));
+}));
 
 // Compression
 app.use(compression());
@@ -93,16 +93,17 @@ app.get('/api/info', (req, res) => {
       '/swap/intent': 'Generate trade intent',
       '/swap/commit': 'Commit trade intent',
       '/swap/reveal': 'Reveal and execute trade',
-      '/swap/status/:intentHash': 'Get intent status'
+      '/swap/status/[hash]': 'Get intent status',
+      '/swap/recover/[sessionId]': 'Recover session'
     }
   });
 });
 
-// Main API routes
+// Main API routes - FIXED: Use proper route mounting
 app.use('/swap', swapRoutes);
 
-// 404 handler
-app.use('*', (req, res) => {
+// 404 handler for unmatched routes
+app.use((req, res) => {
   res.status(404).json({ 
     error: 'Route not found',
     path: req.originalUrl,
@@ -118,7 +119,6 @@ app.use(errorHandler as any);
 const gracefulShutdown = (signal: string) => {
   logger.info(`Received ${signal}, starting graceful shutdown...`);
   
-  // Stop accepting new connections
   server.close((error) => {
     if (error) {
       logger.error('Error during server shutdown', error);
@@ -129,7 +129,6 @@ const gracefulShutdown = (signal: string) => {
     process.exit(0);
   });
   
-  // Force shutdown after 30 seconds
   setTimeout(() => {
     logger.error('Forced shutdown after timeout');
     process.exit(1);

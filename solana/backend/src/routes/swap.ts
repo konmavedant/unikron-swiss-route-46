@@ -1,8 +1,6 @@
-// Fix for solana/backend/src/routes/swap.ts
-// The issue is likely in the route parameter definitions
-
 import express from 'express';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 import { fetchQuote } from '../services/jupiterService';
 import { generateIntent } from '../services/intentService';
 import { commitIntent } from '../services/commitService';
@@ -15,14 +13,32 @@ import prisma from '../db/prisma';
 
 const router = express.Router();
 
-// BigInt JSON serialization helper
+// Utility functions
 const serializeBigInt = (obj: any): any => {
   return JSON.parse(JSON.stringify(obj, (key, value) =>
     typeof value === 'bigint' ? value.toString() : value
   ));
 };
 
-// Enhanced schemas with proper validation
+const createErrorResponse = (message: string, code: string, details?: any) => ({
+  error: {
+    message,
+    code,
+    details,
+    timestamp: new Date().toISOString()
+  }
+});
+
+// Fee calculation utilities
+const calculateLiquidityFee = (intent: any): bigint => {
+  return BigInt(Math.floor(intent.amountIn * 0.0025)); // 0.25%
+};
+
+const calculateProtocolFee = (intent: any): bigint => {
+  return BigInt(Math.floor(intent.amountIn * 0.0005)); // 0.05%
+};
+
+// ALL VALIDATION SCHEMAS
 const quoteSchema = z.object({
   fromMint: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid fromMint address'),
   toMint: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid toMint address'),
@@ -38,7 +54,9 @@ const intentSchema = z.object({
     outAmount: z.string(),
     otherAmountThreshold: z.string(),
     swapMode: z.string(),
-    priceImpactPct: z.number(),
+    priceImpactPct: z.union([z.string(), z.number()]).transform(val => 
+      typeof val === 'string' ? parseFloat(val) : val
+    ),
     routePlan: z.array(z.any())
   }),
   tradeMeta: z.object({
@@ -47,7 +65,11 @@ const intentSchema = z.object({
     tokenOut: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid tokenOut address'),
     amountIn: z.number().positive().int(),
     minOut: z.number().positive().int(),
-    expiry: z.number().refine(val => ValidationUtils.isValidExpiry(val), 'Invalid expiry time'),
+    expiry: z.number().refine(val => {
+      const now = Math.floor(Date.now() / 1000);
+      const maxExpiry = now + (7 * 24 * 60 * 60); // 7 days from now
+      return val > now && val <= maxExpiry;
+    }, 'Invalid expiry time - must be in the future and within 7 days'),
     nonce: z.number().int().min(0),
     relayerFee: z.number().int().min(0),
     relayer: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid relayer address')
@@ -59,7 +81,11 @@ const commitSchema = z.object({
   user: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid user address'),
   intentHash: z.string().refine(val => ValidationUtils.isValidHash(val), 'Invalid intent hash'),
   nonce: z.number().int().min(0),
-  expiry: z.number().refine(val => ValidationUtils.isValidExpiry(val), 'Invalid expiry time'),
+  expiry: z.number().refine(val => {
+    const now = Math.floor(Date.now() / 1000);
+    const maxExpiry = now + (7 * 24 * 60 * 60);
+    return val > now && val <= maxExpiry;
+  }, 'Invalid expiry time'),
   enableRelay: z.boolean().optional().default(false)
 });
 
@@ -80,27 +106,9 @@ const revealSchema = z.object({
   signature: z.string().refine(val => ValidationUtils.isValidSignature(val), 'Invalid signature')
 });
 
-// Utility function for error responses
-const createErrorResponse = (message: string, code: string, details?: any) => ({
-  error: {
-    message,
-    code,
-    details,
-    timestamp: new Date().toISOString()
-  }
-});
+// ROUTES
 
-// Fee calculation utilities
-const calculateLiquidityFee = (intent: any): bigint => {
-  return BigInt(Math.floor(intent.amountIn * 0.0025));
-};
-
-const calculateProtocolFee = (intent: any): bigint => {
-  return BigInt(Math.floor(intent.amountIn * 0.0005));
-};
-
-// Routes with enhanced error handling and logging
-
+// POST /swap/quote
 router.post('/quote', async (req: any, res: any) => {
   const startTime = Date.now();
 
@@ -130,7 +138,7 @@ router.post('/quote', async (req: any, res: any) => {
     res.json({
       route,
       metadata: {
-        requestId: crypto.randomUUID(),
+        requestId: randomUUID(),
         timestamp: new Date().toISOString(),
         processingTimeMs: duration
       }
@@ -151,6 +159,7 @@ router.post('/quote', async (req: any, res: any) => {
   }
 });
 
+// POST /swap/intent
 router.post('/intent', async (req: any, res: any) => {
   const startTime = Date.now();
 
@@ -224,7 +233,7 @@ router.post('/intent', async (req: any, res: any) => {
       hash,
       sessionRecovery: sessionId ? { sessionId, saved: true } : null,
       metadata: {
-        requestId: crypto.randomUUID(),
+        requestId: randomUUID(),
         timestamp: new Date().toISOString(),
         processingTimeMs: duration
       }
@@ -245,6 +254,7 @@ router.post('/intent', async (req: any, res: any) => {
   }
 });
 
+// POST /swap/commit
 router.post('/commit', async (req: any, res: any) => {
   const startTime = Date.now();
 
@@ -333,7 +343,7 @@ router.post('/commit', async (req: any, res: any) => {
       status: 'committed',
       relayQueued: parsed.data.enableRelay,
       metadata: {
-        requestId: crypto.randomUUID(),
+        requestId: randomUUID(),
         timestamp: new Date().toISOString(),
         processingTimeMs: duration
       }
@@ -354,6 +364,7 @@ router.post('/commit', async (req: any, res: any) => {
   }
 });
 
+// POST /swap/reveal
 router.post('/reveal', async (req: any, res: any) => {
   const startTime = Date.now();
 
@@ -446,7 +457,7 @@ router.post('/reveal', async (req: any, res: any) => {
       tx,
       status: 'revealed',
       metadata: {
-        requestId: crypto.randomUUID(),
+        requestId: randomUUID(),
         timestamp: new Date().toISOString(),
         processingTimeMs: duration
       }
@@ -467,7 +478,7 @@ router.post('/reveal', async (req: any, res: any) => {
   }
 });
 
-// FIXED: Proper route parameter syntax
+// GET /swap/status/:intentHash
 router.get('/status/:intentHash', async (req: any, res: any) => {
   try {
     const intentHash = req.params.intentHash;
@@ -551,7 +562,7 @@ router.get('/status/:intentHash', async (req: any, res: any) => {
   }
 });
 
-// FIXED: Proper route parameter syntax
+// GET /swap/recover/:sessionId
 router.get('/recover/:sessionId', async (req: any, res: any) => {
   try {
     const sessionId = req.params.sessionId;
@@ -585,7 +596,68 @@ router.get('/recover/:sessionId', async (req: any, res: any) => {
   }
 });
 
-router.get('/health', async (req, res) => {
+router.get('/wallet-info', async (req: any, res: any) => {
+  try {
+    const { getWallet } = await import('../services/solanaService');
+    const wallet = getWallet();
+    
+    res.json({
+      publicKey: wallet.publicKey.toBase58(),
+      message: "Use this public key as the 'user' field for testing commit operations"
+    });
+  } catch (err: any) {
+    res.status(500).json(createErrorResponse(
+      'Failed to get wallet info',
+      'WALLET_ERROR',
+      err.message
+    ));
+  }
+});
+
+router.get('/test-pda/:user/:nonce', async (req: any, res: any) => {
+  try {
+    const { testPdaDerivation } = await import('../services/commitService');
+    const { user, nonce } = req.params;
+    
+    const result = await testPdaDerivation(user, parseInt(nonce));
+    
+    res.json({
+      ...result,
+      message: result.derivationTests.some((test: any) => test.pda) ? 
+        "Account already exists - try a different nonce" : 
+        "Account does not exist - ready for commit"
+    });
+  } catch (err: any) {
+    res.status(500).json(createErrorResponse(
+      'PDA test failed',
+      'PDA_ERROR',
+      err.message
+    ));
+  }
+});
+
+router.get('/debug-pda/:user/:nonce', async (req: any, res: any) => {
+  try {
+    const { debugPdaDerivation } = await import('../services/commitService');
+    const { user, nonce } = req.params;
+    
+    const result = await debugPdaDerivation(user, parseInt(nonce));
+    
+    res.json({
+      ...result,
+      message: "Compare derivation methods with the expected PDA from program logs"
+    });
+  } catch (err: any) {
+    res.status(500).json(createErrorResponse(
+      'PDA debug failed',
+      'PDA_DEBUG_ERROR',
+      err.message
+    ));
+  }
+});
+
+// GET /swap/health
+router.get('/health', async (req: any, res: any) => {
   const startTime = Date.now();
 
   try {

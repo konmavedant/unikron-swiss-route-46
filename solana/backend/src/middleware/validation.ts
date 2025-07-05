@@ -24,7 +24,7 @@ export class ValidationUtils {
 
   static isValidExpiry(expiry: number): boolean {
     const now = Math.floor(Date.now() / 1000);
-    const maxExpiry = now + (24 * 60 * 60); // 24 hours from now
+    const maxExpiry = now + (7 * 24 * 60 * 60); // 7 days from now (more flexible)
     return expiry > now && expiry <= maxExpiry;
   }
 
