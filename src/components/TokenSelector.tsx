@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from "react";
-import { ChevronDown, Search, TrendingUp, TrendingDown } from "lucide-react";
+import { ChevronDown, Search, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,7 +38,7 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
   
   const { tokens, loading: tokensLoading, searchTokens } = useMultiChainTokens();
   const { selectedBlockchain, isEthereum, isSolana } = useBlockchain();
-  const { getPriceData, loading: priceLoading } = usePrices([token.symbol]);
+  const { getPriceData, loading: priceLoading, isDataStale, refreshPrices } = usePrices([token.symbol]);
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
@@ -68,11 +68,17 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
 
   const priceData = getPriceData(token.symbol);
   const displayTokens = searchQuery.length > 1 ? searchResults : tokens;
+  const isStale = isDataStale(token.symbol);
 
   // Get the icon for the current blockchain
   const getBlockchainIcon = () => {
     if (isSolana) return "🌞";
     return "🔷";
+  };
+
+  const handleRefreshPrice = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    refreshPrices();
   };
 
   return (
@@ -104,13 +110,15 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
                   <div className="font-semibold text-lg text-gray-900">{token.symbol}</div>
                   <div className="text-sm text-gray-500 flex items-center space-x-2">
                     <span>{token.chain}</span>
-                    {priceData && !priceLoading && (
+                    {priceData && (
                       <>
                         <span>•</span>
-                        <span className="font-medium">${priceData.price.toFixed(4)}</span>
+                        <span className={`font-medium ${isStale ? 'text-gray-400' : ''}`}>
+                          ${priceData.price.toFixed(4)}
+                        </span>
                         <span className={`flex items-center text-xs ${
                           priceData.change24h >= 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
+                        } ${isStale ? 'text-gray-400' : ''}`}>
                           {priceData.change24h >= 0 ? (
                             <TrendingUp className="h-3 w-3 mr-1" />
                           ) : (
@@ -118,7 +126,21 @@ const TokenSelector = ({ label, token, onTokenChange, showBalance }: TokenSelect
                           )}
                           {Math.abs(priceData.change24h).toFixed(2)}%
                         </span>
+                        {(isStale || priceLoading) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleRefreshPrice}
+                            className="p-1 h-auto"
+                            disabled={priceLoading}
+                          >
+                            <RefreshCw className={`h-3 w-3 ${priceLoading ? 'animate-spin' : ''}`} />
+                          </Button>
+                        )}
                       </>
+                    )}
+                    {priceLoading && !priceData && (
+                      <span className="text-xs text-gray-400">Loading...</span>
                     )}
                   </div>
                 </div>
