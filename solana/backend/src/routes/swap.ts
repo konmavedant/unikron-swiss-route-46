@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { fetchQuote } from '../services/jupiterService';
 import { generateIntent } from '../services/intentService';
-import { commitIntent } from '../services/commitService';
+//import { commitIntent } from '../services/commitService';
 import { revealIntent } from '../services/solanaService';
 import { ValidationUtils } from '../middleware/validation';
 import { logger } from '../utils/logger';
@@ -54,7 +54,7 @@ const intentSchema = z.object({
     outAmount: z.string(),
     otherAmountThreshold: z.string(),
     swapMode: z.string(),
-    priceImpactPct: z.union([z.string(), z.number()]).transform(val => 
+    priceImpactPct: z.union([z.string(), z.number()]).transform(val =>
       typeof val === 'string' ? parseFloat(val) : val
     ),
     routePlan: z.array(z.any())
@@ -254,35 +254,55 @@ router.post('/intent', async (req: any, res: any) => {
   }
 });
 
-// POST /swap/commit
+
+// MODIFY existing /swap/commit route to redirect to proper flow
 router.post('/commit', async (req: any, res: any) => {
+  // Return instructions for proper user-signed flow
+  res.status(400).json({
+    error: {
+      message: 'Direct commit not supported - users must sign their own transactions',
+      code: 'USER_SIGNATURE_REQUIRED',
+      instructions: {
+        step1: 'Use POST /swap/commit/prepare to get unsigned transaction',
+        step2: 'Sign the transaction with user wallet (frontend)',
+        step3: 'Submit signed transaction to POST /swap/commit/submit',
+        alternative: 'For testing only: Use POST /swap/commit/test'
+      },
+      timestamp: new Date().toISOString()
+    }
+  });
+});
+
+
+
+// POST /swap/commit/demo - Demo the proper flow
+
+
+router.post('/commit/simple', async (req: any, res: any) => {
   const startTime = Date.now();
 
   try {
-    const parsed = commitSchema.safeParse(req.body);
-    if (!parsed.success) {
-      logger.warn('Commit validation failed', { errors: parsed.error.errors });
+    const { intentHash, nonce, expiry } = req.body;
+
+    if (!intentHash || !nonce || !expiry) {
       return res.status(400).json(createErrorResponse(
-        'Validation failed',
-        'VALIDATION_ERROR',
-        parsed.error.errors
+        'Missing required fields: intentHash, nonce, expiry',
+        'VALIDATION_ERROR'
       ));
     }
 
-    logger.info('Processing commit request', {
-      user: parsed.data.user,
-      intentHash: parsed.data.intentHash,
-      enableRelay: parsed.data.enableRelay
-    });
-
+    // Find the original intent
     const existingIntent = await prisma.tradeIntent.findUnique({
-      where: { intentHash: parsed.data.intentHash },
-      include: { swapCommit: true }
+      where: { intentHash },
+      include: { 
+        user: true,
+        swapCommit: true 
+      }
     });
 
     if (!existingIntent) {
       return res.status(404).json(createErrorResponse(
-        'Intent not found',
+        'Intent not found in database',
         'INTENT_NOT_FOUND'
       ));
     }
@@ -295,70 +315,76 @@ router.post('/commit', async (req: any, res: any) => {
       ));
     }
 
-    const tx = await commitIntent(
-      parsed.data.user,
-      parsed.data.intentHash,
-      parsed.data.nonce,
-      parsed.data.expiry
+    logger.info('SIMPLIFIED COMMIT: Creating new commit with backend wallet');
+
+    const { createAndCommitTestIntent } = await import('../services/commitService');
+    
+    const result = await createAndCommitTestIntent(
+      intentHash,
+      nonce,
+      expiry
     );
 
-    await prisma.$transaction(async (txClient) => {
-      await txClient.swapCommit.create({
-        data: {
-          intentId: existingIntent.id,
-          commitmentTx: tx
-        }
-      });
-
-      await txClient.tradeIntent.update({
-        where: { intentHash: parsed.data.intentHash },
-        data: { status: 'committed' }
-      });
+    // Update database
+    await prisma.swapCommit.create({
+      data: {
+        intentId: existingIntent.id,
+        commitmentTx: result.tx
+      }
     });
 
-    if (parsed.data.enableRelay) {
-      try {
-        await QueueService.queueReveal(parsed.data.intentHash, {
-          delaySeconds: 30
-        });
-        logger.info('Added to relay queue', { intentHash: parsed.data.intentHash });
-      } catch (queueError) {
-        logger.warn('Failed to add to relay queue', {
-          error: queueError,
-          intentHash: parsed.data.intentHash
-        });
-      }
-    }
+    await prisma.tradeIntent.update({
+      where: { intentHash },
+      data: { status: 'committed' }
+    });
 
     const duration = Date.now() - startTime;
-    logger.info('Commit completed', {
-      tx,
-      intentHash: parsed.data.intentHash,
-      duration,
-      relayQueued: parsed.data.enableRelay
-    });
-
+    
     res.json({
-      tx,
+      success: true,
+      tx: result.tx,
       status: 'committed',
-      relayQueued: parsed.data.enableRelay,
+      originalUser: result.originalUser,
+      actualCommitter: result.backendUser,
+      pda: result.pda,
+      approach: 'simplified',
+      note: 'Used backend wallet to commit, bypassing PDA derivation issues',
+      explanation: 'This demonstrates successful commit flow. In production, users would sign their own commits.',
       metadata: {
         requestId: randomUUID(),
         timestamp: new Date().toISOString(),
         processingTimeMs: duration
       }
     });
+
   } catch (err: any) {
     const duration = Date.now() - startTime;
-    logger.error('Commit failed', {
-      error: err.message,
-      duration,
-      intentHash: req.body.intentHash
-    });
+    logger.error('Simplified commit failed', { error: err.message, duration });
 
     res.status(500).json(createErrorResponse(
-      'Commit failed',
-      'COMMIT_ERROR',
+      'Simplified commit failed',
+      'SIMPLIFIED_COMMIT_ERROR',
+      err.message
+    ));
+  }
+});
+
+// GET /swap/debug-pda-extensive/:user/:nonce - Enhanced PDA debugging
+router.get('/debug-pda-extensive/:user/:nonce', async (req: any, res: any) => {
+  try {
+    const { debugPdaExtensive } = await import('../services/commitService');
+    const { user, nonce } = req.params;
+
+    const result = await debugPdaExtensive(user, parseInt(nonce));
+
+    res.json({
+      ...result,
+      message: "Extensive PDA derivation testing - find a method where exists=false"
+    });
+  } catch (err: any) {
+    res.status(500).json(createErrorResponse(
+      'PDA extensive debug failed',
+      'PDA_EXTENSIVE_DEBUG_ERROR',
       err.message
     ));
   }
@@ -600,7 +626,7 @@ router.get('/wallet-info', async (req: any, res: any) => {
   try {
     const { getWallet } = await import('../services/solanaService');
     const wallet = getWallet();
-    
+
     res.json({
       publicKey: wallet.publicKey.toBase58(),
       message: "Use this public key as the 'user' field for testing commit operations"
@@ -618,14 +644,12 @@ router.get('/test-pda/:user/:nonce', async (req: any, res: any) => {
   try {
     const { testPdaDerivation } = await import('../services/commitService');
     const { user, nonce } = req.params;
-    
+
     const result = await testPdaDerivation(user, parseInt(nonce));
-    
+
     res.json({
       ...result,
-      message: result.derivationTests.some((test: any) => test.pda) ? 
-        "Account already exists - try a different nonce" : 
-        "Account does not exist - ready for commit"
+      message: "Compare with the expected PDA – derivation debugging complete"
     });
   } catch (err: any) {
     res.status(500).json(createErrorResponse(
@@ -636,13 +660,14 @@ router.get('/test-pda/:user/:nonce', async (req: any, res: any) => {
   }
 });
 
+
 router.get('/debug-pda/:user/:nonce', async (req: any, res: any) => {
   try {
     const { debugPdaDerivation } = await import('../services/commitService');
     const { user, nonce } = req.params;
-    
+
     const result = await debugPdaDerivation(user, parseInt(nonce));
-    
+
     res.json({
       ...result,
       message: "Compare derivation methods with the expected PDA from program logs"
