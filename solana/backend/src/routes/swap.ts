@@ -1,10 +1,11 @@
 import express from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import { PublicKey } from '@solana/web3.js';
 import { fetchQuote } from '../services/jupiterService';
 import { generateIntent } from '../services/intentService';
-//import { commitIntent } from '../services/commitService';
-import { revealIntent } from '../services/solanaService';
+import { RevealService } from '../services/revealService';
+import { TokenAccountService } from '../services/tokenAccountService';
 import { ValidationUtils } from '../middleware/validation';
 import { logger } from '../utils/logger';
 import { QueueService } from '../services/queueService';
@@ -12,6 +13,10 @@ import { saveIntentToSession, getIntentFromSession } from '../utils/sessionUtils
 import prisma from '../db/prisma';
 
 const router = express.Router();
+
+// Services
+const revealService = new RevealService();
+const tokenAccountService = new TokenAccountService();
 
 // Utility functions
 const serializeBigInt = (obj: any): any => {
@@ -29,16 +34,7 @@ const createErrorResponse = (message: string, code: string, details?: any) => ({
   }
 });
 
-// Fee calculation utilities
-const calculateLiquidityFee = (intent: any): bigint => {
-  return BigInt(Math.floor(intent.amountIn * 0.0025)); // 0.25%
-};
-
-const calculateProtocolFee = (intent: any): bigint => {
-  return BigInt(Math.floor(intent.amountIn * 0.0005)); // 0.05%
-};
-
-// ALL VALIDATION SCHEMAS
+// Validation schemas (existing ones remain the same)
 const quoteSchema = z.object({
   fromMint: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid fromMint address'),
   toMint: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid toMint address'),
@@ -67,7 +63,7 @@ const intentSchema = z.object({
     minOut: z.number().positive().int(),
     expiry: z.number().refine(val => {
       const now = Math.floor(Date.now() / 1000);
-      const maxExpiry = now + (7 * 24 * 60 * 60); // 7 days from now
+      const maxExpiry = now + (7 * 24 * 60 * 60);
       return val > now && val <= maxExpiry;
     }, 'Invalid expiry time - must be in the future and within 7 days'),
     nonce: z.number().int().min(0),
@@ -75,18 +71,6 @@ const intentSchema = z.object({
     relayer: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid relayer address')
   }),
   sessionId: z.string().optional()
-});
-
-const commitSchema = z.object({
-  user: z.string().refine(val => ValidationUtils.isValidPublicKey(val), 'Invalid user address'),
-  intentHash: z.string().refine(val => ValidationUtils.isValidHash(val), 'Invalid intent hash'),
-  nonce: z.number().int().min(0),
-  expiry: z.number().refine(val => {
-    const now = Math.floor(Date.now() / 1000);
-    const maxExpiry = now + (7 * 24 * 60 * 60);
-    return val > now && val <= maxExpiry;
-  }, 'Invalid expiry time'),
-  enableRelay: z.boolean().optional().default(false)
 });
 
 const revealSchema = z.object({
@@ -106,9 +90,7 @@ const revealSchema = z.object({
   signature: z.string().refine(val => ValidationUtils.isValidSignature(val), 'Invalid signature')
 });
 
-// ROUTES
-
-// POST /swap/quote
+// POST /swap/quote (existing implementation remains the same)
 router.post('/quote', async (req: any, res: any) => {
   const startTime = Date.now();
 
@@ -159,7 +141,7 @@ router.post('/quote', async (req: any, res: any) => {
   }
 });
 
-// POST /swap/intent
+// POST /swap/intent (existing implementation remains the same)
 router.post('/intent', async (req: any, res: any) => {
   const startTime = Date.now();
 
@@ -254,6 +236,219 @@ router.post('/intent', async (req: any, res: any) => {
   }
 });
 
+// POST /swap/prepare-accounts - NEW ENDPOINT
+router.post('/prepare-accounts', async (req: any, res: any) => {
+  const startTime = Date.now();
+
+  try {
+    const { user, tokenIn, tokenOut } = req.body;
+
+    if (!ValidationUtils.isValidPublicKey(user) ||
+      !ValidationUtils.isValidPublicKey(tokenIn) ||
+      !ValidationUtils.isValidPublicKey(tokenOut)) {
+      return res.status(400).json(createErrorResponse(
+        'Invalid public key format',
+        'VALIDATION_ERROR'
+      ));
+    }
+
+    const userPub = new PublicKey(user);
+    const tokenInMint = new PublicKey(tokenIn);
+    const tokenOutMint = new PublicKey(tokenOut);
+
+    logger.info('Preparing token accounts', { user, tokenIn, tokenOut });
+
+    const accountPreparation = await tokenAccountService.prepareSwapTokenAccounts(
+      userPub,
+      tokenInMint,
+      tokenOutMint
+    );
+
+    // Get current balances
+    const balances = await tokenAccountService.getUserTokenBalances(
+      userPub,
+      [tokenInMint, tokenOutMint]
+    );
+
+    const duration = Date.now() - startTime;
+
+    res.json({
+      accounts: {
+        tokenIn: accountPreparation.tokenInAccount.toString(),
+        tokenOut: accountPreparation.tokenOutAccount.toString()
+      },
+      setup: {
+        instructions: accountPreparation.setupInstructions.length,
+        accountsToCreate: accountPreparation.accountsToCreate,
+        ready: accountPreparation.setupInstructions.length === 0
+      },
+      balances: {
+        tokenIn: balances.get(tokenIn)?.amount.toString() || '0',
+        tokenOut: balances.get(tokenOut)?.amount.toString() || '0'
+      },
+      metadata: {
+        requestId: randomUUID(),
+        timestamp: new Date().toISOString(),
+        processingTimeMs: duration
+      }
+    });
+
+  } catch (err: any) {
+    const duration = Date.now() - startTime;
+    logger.error('Token account preparation failed', {
+      error: err.message,
+      duration
+    });
+
+    res.status(500).json(createErrorResponse(
+      'Token account preparation failed',
+      'ACCOUNT_PREP_ERROR',
+      err.message
+    ));
+  }
+});
+
+// POST /swap/validate-accounts - NEW ENDPOINT
+router.post('/validate-accounts', async (req: any, res: any) => {
+  try {
+    const { user, tokenIn, tokenOut, amountIn } = req.body;
+
+    if (!ValidationUtils.isValidPublicKey(user) ||
+      !ValidationUtils.isValidPublicKey(tokenIn) ||
+      !ValidationUtils.isValidPublicKey(tokenOut) ||
+      !ValidationUtils.isValidAmount(amountIn)) {
+      return res.status(400).json(createErrorResponse(
+        'Invalid input parameters',
+        'VALIDATION_ERROR'
+      ));
+    }
+
+    const userPub = new PublicKey(user);
+    const tokenInMint = new PublicKey(tokenIn);
+    const tokenOutMint = new PublicKey(tokenOut);
+
+    const validation = await tokenAccountService.validateSwapAccounts(
+      userPub,
+      tokenInMint,
+      tokenOutMint,
+      BigInt(amountIn)
+    );
+
+    res.json({
+      valid: validation.valid,
+      errors: validation.errors,
+      balances: {
+        tokenIn: validation.tokenInBalance.toString(),
+        tokenOut: validation.tokenOutBalance.toString()
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (err: any) {
+    logger.error('Account validation failed', { error: err.message });
+    res.status(500).json(createErrorResponse(
+      'Account validation failed',
+      'VALIDATION_ERROR',
+      err.message
+    ));
+  }
+});
+
+// POST /swap/reveal - UPDATED WITH COMPLETE IMPLEMENTATION
+router.post('/reveal', async (req: any, res: any) => {
+  const startTime = Date.now();
+
+  try {
+    const parsed = revealSchema.safeParse(req.body);
+    if (!parsed.success) {
+      logger.warn('Reveal validation failed', { errors: parsed.error.errors });
+      return res.status(400).json(createErrorResponse(
+        'Validation failed',
+        'VALIDATION_ERROR',
+        parsed.error.errors
+      ));
+    }
+
+    logger.info('Processing reveal request', {
+      expectedHash: parsed.data.expectedHash
+    });
+
+    const existingIntent = await prisma.tradeIntent.findUnique({
+      where: { intentHash: parsed.data.expectedHash },
+      include: {
+        swapCommit: true,
+        swapReveal: true
+      }
+    });
+
+    if (!existingIntent) {
+      return res.status(404).json(createErrorResponse(
+        'Intent not found',
+        'INTENT_NOT_FOUND'
+      ));
+    }
+
+    if (!existingIntent.swapCommit) {
+      return res.status(400).json(createErrorResponse(
+        'Intent not committed yet',
+        'NOT_COMMITTED'
+      ));
+    }
+
+    if (existingIntent.swapReveal) {
+      return res.status(409).json(createErrorResponse(
+        'Intent already revealed',
+        'ALREADY_REVEALED',
+        { revealTx: existingIntent.swapReveal.revealTx }
+      ));
+    }
+
+    // Execute reveal using the new RevealService
+    const result = await revealService.executeReveal(
+      parsed.data.intent,
+      parsed.data.expectedHash,
+      parsed.data.signature
+    );
+
+    const duration = Date.now() - startTime;
+    logger.info('Reveal completed successfully', {
+      transaction: result.transaction,
+      expectedHash: parsed.data.expectedHash,
+      duration
+    });
+
+    res.json({
+      success: result.success,
+      transaction: result.transaction,
+      execution: {
+        amountOut: result.amountOut,
+        protocolFee: result.protocolFee,
+        relayerFee: result.relayerFee
+      },
+      status: 'revealed',
+      metadata: {
+        requestId: randomUUID(),
+        timestamp: new Date().toISOString(),
+        processingTimeMs: duration
+      }
+    });
+
+  } catch (err: any) {
+    const duration = Date.now() - startTime;
+    logger.error('Reveal failed', {
+      error: err.message,
+      duration,
+      expectedHash: req.body.expectedHash
+    });
+
+    res.status(500).json(createErrorResponse(
+      'Reveal failed',
+      'REVEAL_ERROR',
+      err.message
+    ));
+  }
+});
+
 
 // MODIFY existing /swap/commit route to redirect to proper flow
 router.post('/commit', async (req: any, res: any) => {
@@ -294,9 +489,9 @@ router.post('/commit/simple', async (req: any, res: any) => {
     // Find the original intent
     const existingIntent = await prisma.tradeIntent.findUnique({
       where: { intentHash },
-      include: { 
+      include: {
         user: true,
-        swapCommit: true 
+        swapCommit: true
       }
     });
 
@@ -318,7 +513,7 @@ router.post('/commit/simple', async (req: any, res: any) => {
     logger.info('SIMPLIFIED COMMIT: Creating new commit with backend wallet');
 
     const { createAndCommitTestIntent } = await import('../services/commitService');
-    
+
     const result = await createAndCommitTestIntent(
       intentHash,
       nonce,
@@ -339,7 +534,7 @@ router.post('/commit/simple', async (req: any, res: any) => {
     });
 
     const duration = Date.now() - startTime;
-    
+
     res.json({
       success: true,
       tx: result.tx,
@@ -390,119 +585,7 @@ router.get('/debug-pda-extensive/:user/:nonce', async (req: any, res: any) => {
   }
 });
 
-// POST /swap/reveal
-router.post('/reveal', async (req: any, res: any) => {
-  const startTime = Date.now();
 
-  try {
-    const parsed = revealSchema.safeParse(req.body);
-    if (!parsed.success) {
-      logger.warn('Reveal validation failed', { errors: parsed.error.errors });
-      return res.status(400).json(createErrorResponse(
-        'Validation failed',
-        'VALIDATION_ERROR',
-        parsed.error.errors
-      ));
-    }
-
-    logger.info('Processing reveal request', {
-      expectedHash: parsed.data.expectedHash
-    });
-
-    const existingIntent = await prisma.tradeIntent.findUnique({
-      where: { intentHash: parsed.data.expectedHash },
-      include: {
-        swapCommit: true,
-        swapReveal: true
-      }
-    });
-
-    if (!existingIntent) {
-      return res.status(404).json(createErrorResponse(
-        'Intent not found',
-        'INTENT_NOT_FOUND'
-      ));
-    }
-
-    if (!existingIntent.swapCommit) {
-      return res.status(400).json(createErrorResponse(
-        'Intent not committed yet',
-        'NOT_COMMITTED'
-      ));
-    }
-
-    if (existingIntent.swapReveal) {
-      return res.status(409).json(createErrorResponse(
-        'Intent already revealed',
-        'ALREADY_REVEALED',
-        { revealTx: existingIntent.swapReveal.revealTx }
-      ));
-    }
-
-    const tx = await revealIntent(
-      parsed.data.intent,
-      parsed.data.expectedHash,
-      parsed.data.signature
-    );
-
-    await prisma.$transaction([
-      prisma.swapReveal.create({
-        data: {
-          intentId: existingIntent.id,
-          revealTx: tx,
-          settlementSuccessful: true
-        }
-      }),
-
-      prisma.tradeIntent.update({
-        where: { intentHash: parsed.data.expectedHash },
-        data: {
-          status: 'revealed',
-          signature: parsed.data.signature
-        }
-      }),
-
-      prisma.feeSplit.create({
-        data: {
-          intentId: existingIntent.id,
-          liquidityAmount: calculateLiquidityFee(parsed.data.intent),
-          protocolAmount: calculateProtocolFee(parsed.data.intent),
-          bountyAmount: BigInt(parsed.data.intent.relayerFee)
-        }
-      })
-    ]);
-
-    const duration = Date.now() - startTime;
-    logger.info('Reveal completed', {
-      tx,
-      expectedHash: parsed.data.expectedHash,
-      duration
-    });
-
-    res.json({
-      tx,
-      status: 'revealed',
-      metadata: {
-        requestId: randomUUID(),
-        timestamp: new Date().toISOString(),
-        processingTimeMs: duration
-      }
-    });
-  } catch (err: any) {
-    const duration = Date.now() - startTime;
-    logger.error('Reveal failed', {
-      error: err.message,
-      duration,
-      expectedHash: req.body.expectedHash
-    });
-
-    res.status(500).json(createErrorResponse(
-      'Reveal failed',
-      'REVEAL_ERROR',
-      err.message
-    ));
-  }
-});
 
 // GET /swap/status/:intentHash
 router.get('/status/:intentHash', async (req: any, res: any) => {

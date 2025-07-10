@@ -1,8 +1,10 @@
+// src/index.ts - Updated main server with fee management routes
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import swapRoutes from './routes/swap';
+import feeRoutes from './routes/feeManagement'; // NEW IMPORT
 import { errorHandler } from './middleware/errorHandler';
 import { validateEnvironment, config } from './config/env';
 import { logger } from './utils/logger';
@@ -89,18 +91,44 @@ app.get('/api/info', (req, res) => {
     endpoints: {
       '/health': 'Health check',
       '/api/info': 'API information',
+      
+      // Swap endpoints
       '/swap/quote': 'Get swap quotes from Jupiter',
       '/swap/intent': 'Generate trade intent',
+      '/swap/prepare-accounts': 'Prepare token accounts for swap',
+      '/swap/validate-accounts': 'Validate token accounts and balances',
       '/swap/commit': 'Commit trade intent',
+      '/swap/commit/simple': 'Simplified commit for testing',
       '/swap/reveal': 'Reveal and execute trade',
       '/swap/status/[hash]': 'Get intent status',
-      '/swap/recover/[sessionId]': 'Recover session'
+      '/swap/recover/[sessionId]': 'Recover session',
+      '/swap/health': 'Swap system health',
+      
+      // Fee management endpoints
+      '/fee/initialize-accounts': 'Initialize fee distribution accounts',
+      '/fee/settle': 'Distribute collected fees',
+      '/fee/accounts/[tokenMint]': 'Get fee account info and balances',
+      '/fee/health': 'Fee system health',
+      
+      // Debug endpoints
+      '/swap/wallet-info': 'Get backend wallet info',
+      '/swap/test-pda/[user]/[nonce]': 'Test PDA derivation',
+      '/swap/debug-pda/[user]/[nonce]': 'Debug PDA derivation'
+    },
+    features: {
+      'Jupiter Integration': 'Route discovery via Jupiter API',
+      'Commit-Reveal': 'MEV protection through commit-reveal scheme',
+      'Fee Distribution': 'Automated fee splitting to stakers, treasury, and MEV bounty',
+      'Token Account Management': 'Automatic ATA creation and validation',
+      'Session Recovery': 'Recover interrupted swap flows',
+      'Database Tracking': 'Complete audit trail of all operations'
     }
   });
 });
 
-// Main API routes - FIXED: Use proper route mounting
+// Main API routes
 app.use('/swap', swapRoutes);
+app.use('/fee', feeRoutes); // NEW ROUTE MOUNTING
 
 // 404 handler for unmatched routes
 app.use((req, res) => {
@@ -108,7 +136,8 @@ app.use((req, res) => {
     error: 'Route not found',
     path: req.originalUrl,
     method: req.method,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    availableEndpoints: '/api/info'
   });
 });
 
@@ -140,6 +169,8 @@ const server = app.listen(config.port, () => {
   logger.info(`📊 Health check available at http://localhost:${config.port}/health`);
   logger.info(`📚 API info available at http://localhost:${config.port}/api/info`);
   logger.info(`🌍 Environment: ${config.nodeEnv}`);
+  logger.info(`💰 Fee management: http://localhost:${config.port}/fee/*`);
+  logger.info(`🔄 Swap API: http://localhost:${config.port}/swap/*`);
 });
 
 // Handle graceful shutdown
