@@ -10,7 +10,7 @@ interface SolanaWalletProviderProps {
 
 export const SolanaWalletProvider = ({ children }: SolanaWalletProviderProps) => {
   // You can also provide a custom RPC endpoint
-  const network = WalletAdapterNetwork.Mainnet;
+  const network = WalletAdapterNetwork.Devnet;
   const endpoint = useMemo(() => clusterApiUrl(network), [network]);
 
   const wallets = useMemo(

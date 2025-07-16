@@ -14,6 +14,9 @@ import { useSwapQuote } from "@/hooks/useSwapQuote";
 import { useSwapStore } from "@/store/swap";
 import { TokenBalanceDisplay } from "./TokenBalanceDisplay";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
+import { useWalletStore } from "@/store/wallet";
+import { useAccount } from 'wagmi';
+import { useWallet } from '@solana/wallet-adapter-react';
 
 interface SwapFormProps {
   tokens: Token[];
@@ -21,15 +24,15 @@ interface SwapFormProps {
   onPreview: () => void;
 }
 
-export const SwapForm = ({ 
-  tokens, 
+export const SwapForm = ({
+  tokens,
   onPreview,
-  isConnected 
+  isConnected
 }: SwapFormProps) => {
   // Local state for MEV protection and settings
   const [mevProtection, setMevProtection] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
+
   // Global swap state
   const {
     chainType,
@@ -47,6 +50,30 @@ export const SwapForm = ({
     swapTokens: swapTokenPositions,
   } = useSwapStore();
 
+  // Wallet connections
+  const { address: evmAddress, isConnected: evmConnected } = useAccount();
+  const { publicKey: solanaAddress, connected: solanaConnected } = useWallet();
+  const { address: storeAddress, chainType: storeChainType } = useWalletStore();
+
+  // Determine if wallet is connected for current chain
+  const isWalletConnected = useMemo(() => {
+    if (chainType === 'evm') {
+      return evmConnected && !!evmAddress;
+    } else {
+      return solanaConnected && !!solanaAddress;
+    }
+  }, [chainType, evmConnected, evmAddress, solanaConnected, solanaAddress]);
+
+  // Get current wallet address
+  const currentWalletAddress = useMemo(() => {
+    if (chainType === 'evm' && evmAddress) {
+      return evmAddress;
+    } else if (chainType === 'solana' && solanaAddress) {
+      return solanaAddress.toString();
+    }
+    return null;
+  }, [chainType, evmAddress, solanaAddress]);
+
   const { hasValidInputs } = useSwapQuote();
   const { handleError } = useErrorHandler();
 
@@ -60,6 +87,11 @@ export const SwapForm = ({
       onPreview();
     }
   };
+
+  // Check if we can show the swap button
+  const canShowSwapButton = useMemo(() => {
+    return isWalletConnected && inputToken && outputToken && inputAmount && !isLoadingQuote;
+  }, [isWalletConnected, inputToken, outputToken, inputAmount, isLoadingQuote]);
 
   return (
     <Card className="w-full max-w-md mx-auto shadow-card">
@@ -77,22 +109,22 @@ export const SwapForm = ({
                 <div className="space-y-2">
                   <Label htmlFor="slippage">Slippage Tolerance (%)</Label>
                   <div className="flex gap-2">
-                    <Button 
-                      variant={config.slippage === 0.1 ? "default" : "outline"} 
+                    <Button
+                      variant={config.slippage === 0.1 ? "default" : "outline"}
                       size="sm"
                       onClick={() => setConfig({ slippage: 0.1 })}
                     >
                       0.1%
                     </Button>
-                    <Button 
-                      variant={config.slippage === 0.5 ? "default" : "outline"} 
+                    <Button
+                      variant={config.slippage === 0.5 ? "default" : "outline"}
                       size="sm"
                       onClick={() => setConfig({ slippage: 0.5 })}
                     >
                       0.5%
                     </Button>
-                    <Button 
-                      variant={config.slippage === 1.0 ? "default" : "outline"} 
+                    <Button
+                      variant={config.slippage === 1.0 ? "default" : "outline"}
                       size="sm"
                       onClick={() => setConfig({ slippage: 1.0 })}
                     >
@@ -125,32 +157,32 @@ export const SwapForm = ({
             </PopoverContent>
           </Popover>
         </div>
-        
+
         <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border/50">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-shield-cyan" />
             <span className="text-sm font-medium">MEV Protection</span>
           </div>
-          <Switch 
+          <Switch
             checked={mevProtection}
             onCheckedChange={setMevProtection}
           />
         </div>
       </CardHeader>
-      
+
       <CardContent className="space-y-4">
         {/* From Token */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">From</span>
-            <TokenBalanceDisplay 
+            <TokenBalanceDisplay
               token={inputToken}
               chainType={chainType}
-              isConnected={isConnected}
+              isConnected={isWalletConnected}
               className="text-sm"
             />
           </div>
-            <div className="flex gap-2">
+          <div className="flex gap-2">
             <div className="flex-1">
               <Input
                 type="number"
@@ -158,7 +190,7 @@ export const SwapForm = ({
                 value={inputAmount}
                 onChange={(e) => setInputAmount(e.target.value)}
                 className="text-lg h-12"
-                disabled={!isConnected}
+                disabled={!isWalletConnected}
               />
             </div>
             <TokenSelector
@@ -166,19 +198,19 @@ export const SwapForm = ({
               onTokenSelect={setInputToken}
               chainType={chainType}
               label="Select Token"
-              disabled={!isConnected}
+              disabled={!isWalletConnected}
             />
           </div>
         </div>
 
         {/* Swap Button */}
         <div className="flex justify-center">
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             className="rounded-full border border-border/50"
             onClick={swapTokenPositions}
-            disabled={!isConnected}
+            disabled={!isWalletConnected}
           >
             <ArrowDownUp className="w-4 h-4" />
           </Button>
@@ -188,14 +220,14 @@ export const SwapForm = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">To</span>
-            <TokenBalanceDisplay 
+            <TokenBalanceDisplay
               token={outputToken}
               chainType={chainType}
-              isConnected={isConnected}
+              isConnected={isWalletConnected}
               className="text-sm"
             />
           </div>
-            <div className="flex gap-2">
+          <div className="flex gap-2">
             <div className="flex-1">
               <Input
                 type="number"
@@ -203,7 +235,7 @@ export const SwapForm = ({
                 value={outputAmount}
                 className="text-lg h-12"
                 readOnly
-                disabled={!isConnected}
+                disabled={!isWalletConnected}
               />
             </div>
             <TokenSelector
@@ -211,13 +243,13 @@ export const SwapForm = ({
               onTokenSelect={setOutputToken}
               chainType={chainType}
               label="Select Token"
-              disabled={!isConnected}
+              disabled={!isWalletConnected}
             />
           </div>
         </div>
 
         {/* Quote Display */}
-        <SwapQuoteDisplay 
+        <SwapQuoteDisplay
           quote={quote}
           isLoading={isLoadingQuote}
           mevProtection={mevProtection}
@@ -236,13 +268,13 @@ export const SwapForm = ({
           </div>
         )}
 
-        <Button 
-          variant={mevProtection ? "default" : "secondary"} 
+        <Button
+          variant={mevProtection ? "default" : "secondary"}
           className="w-full h-12 text-base font-semibold"
-          disabled={!isConnected || !inputToken || !outputToken || !inputAmount || isLoadingQuote}
+          disabled={!canShowSwapButton}
           onClick={handlePreview}
         >
-          {!isConnected ? (
+          {!isWalletConnected ? (
             "Connect Wallet"
           ) : !inputToken || !outputToken ? (
             "Select Tokens"

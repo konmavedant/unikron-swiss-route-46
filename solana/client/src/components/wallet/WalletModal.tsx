@@ -37,7 +37,7 @@ export const WalletModal = ({ open, onClose, onConnect }: WalletModalProps) => {
         description: `Connected to ${evmAddress.slice(0, 6)}...${evmAddress.slice(-4)}`,
       });
     }
-  }, [evmConnected, evmAddress, chainId]);
+  }, [evmConnected, evmAddress, chainId, storeConnect, onConnect, onClose]);
 
   // Handle Solana connection
   useEffect(() => {
@@ -51,29 +51,51 @@ export const WalletModal = ({ open, onClose, onConnect }: WalletModalProps) => {
         description: `Connected to ${address.slice(0, 6)}...${address.slice(-4)}`,
       });
     }
-  }, [solanaConnected, solanaAddress]);
+  }, [solanaConnected, solanaAddress, storeConnect, onConnect, onClose]);
 
   const handlePhantomConnect = async () => {
     try {
       setConnecting(true);
       
-      // Find Phantom wallet
+      // Check if Phantom is installed
+      if (!window.phantom?.solana) {
+        toast({
+          title: "Phantom Not Found",
+          description: "Please install Phantom wallet to continue.",
+          variant: "destructive",
+        });
+        setConnecting(false);
+        return;
+      }
+
+      // Find and select Phantom wallet
       const phantomWallet = wallets.find(wallet => wallet.adapter.name === 'Phantom');
       
       if (phantomWallet) {
-        // Select Phantom wallet
         select(phantomWallet.adapter.name);
         
-        // Connect to Phantom
-        await solanaConnect();
+        // Give some time for the wallet to be selected
+        setTimeout(async () => {
+          try {
+            await solanaConnect();
+          } catch (error) {
+            console.error('Phantom connection error:', error);
+            toast({
+              title: "Connection Failed",
+              description: "Failed to connect to Phantom wallet. Please try again.",
+              variant: "destructive",
+            });
+            setConnecting(false);
+          }
+        }, 100);
       } else {
-        throw new Error('Phantom wallet not found');
+        throw new Error('Phantom wallet not found in adapter list');
       }
     } catch (error) {
       console.error('Phantom wallet connection failed:', error);
       toast({
         title: "Connection Failed",
-        description: "Failed to connect to Phantom wallet. Please make sure Phantom is installed.",
+        description: "Failed to connect to Phantom wallet. Please make sure Phantom is installed and unlocked.",
         variant: "destructive",
       });
       setConnecting(false);
@@ -203,7 +225,7 @@ export const WalletModal = ({ open, onClose, onConnect }: WalletModalProps) => {
               )}
               
               {/* Install Phantom if not detected */}
-              {!window.phantom && !solanaConnected && (
+              {!window.phantom?.solana && !solanaConnected && (
                 <div className="text-center py-4 text-muted-foreground">
                   <p className="text-sm">Phantom wallet not detected.</p>
                   <p className="text-xs mt-1">Please install Phantom wallet to continue.</p>

@@ -10,13 +10,16 @@ export const useWalletConnection = () => {
   const { 
     publicKey: solanaAddress, 
     connected: solanaConnected, 
-    disconnect: solanaDisconnect 
+    disconnect: solanaDisconnect,
+    connecting: solanaConnecting,
+    disconnecting: solanaDisconnecting
   } = useWallet();
   
   const { 
     connect: storeConnect, 
     disconnect: storeDisconnect,
-    setWallet 
+    setWallet,
+    setConnecting
   } = useWalletStore();
 
   // Sync EVM wallet state
@@ -25,16 +28,11 @@ export const useWalletConnection = () => {
       storeConnect(evmAddress, 'evm', chainId);
       setWallet({
         walletType: 'rainbow',
-        balance: undefined, // TODO: Fetch balance
+        balance: undefined, // Will be fetched by useTokenBalance
         ensName: undefined, // TODO: Fetch ENS
       });
-    } else if (!evmConnected) {
-      // Only disconnect store if no Solana connection either
-      if (!solanaConnected) {
-        storeDisconnect();
-      }
     }
-  }, [evmConnected, evmAddress, chainId, solanaConnected]);
+  }, [evmConnected, evmAddress, chainId, storeConnect, setWallet]);
 
   // Sync Solana wallet state
   useEffect(() => {
@@ -43,15 +41,22 @@ export const useWalletConnection = () => {
       storeConnect(address, 'solana');
       setWallet({
         walletType: 'phantom',
-        balance: undefined, // TODO: Fetch balance
+        balance: undefined, // Will be fetched by useTokenBalance
       });
-    } else if (!solanaConnected) {
-      // Only disconnect store if no EVM connection either
-      if (!evmConnected) {
-        storeDisconnect();
-      }
     }
-  }, [solanaConnected, solanaAddress, evmConnected]);
+  }, [solanaConnected, solanaAddress, storeConnect, setWallet]);
+
+  // Handle disconnection
+  useEffect(() => {
+    if (!evmConnected && !solanaConnected) {
+      storeDisconnect();
+    }
+  }, [evmConnected, solanaConnected, storeDisconnect]);
+
+  // Handle connection loading states
+  useEffect(() => {
+    setConnecting(solanaConnecting);
+  }, [solanaConnecting, setConnecting]);
 
   const disconnectAll = async () => {
     try {
@@ -76,6 +81,8 @@ export const useWalletConnection = () => {
     solanaConnected,
     solanaAddress: solanaAddress?.toString(),
     isAnyWalletConnected,
+    isConnecting: solanaConnecting,
+    isDisconnecting: solanaDisconnecting,
     disconnectAll,
   };
 };

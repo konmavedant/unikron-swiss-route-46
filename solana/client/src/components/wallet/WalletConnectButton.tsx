@@ -6,7 +6,6 @@ import { WalletModal } from "./WalletModal";
 import { useWalletStore } from "@/store/wallet";
 import { useAccount } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 interface WalletConnectButtonProps {
   onConnect?: (address: string, chainType: 'evm' | 'solana') => void;

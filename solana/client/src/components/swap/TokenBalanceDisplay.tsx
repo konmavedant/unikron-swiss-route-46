@@ -25,11 +25,20 @@ export const TokenBalanceDisplay = ({
     enabled: isConnected && !!token,
   });
 
-  if (!isConnected || !token) {
+  if (!isConnected) {
     return (
       <div className={`flex items-center gap-2 text-muted-foreground ${className}`}>
         <Wallet className="w-4 h-4" />
         <span className="text-sm">Connect wallet</span>
+      </div>
+    );
+  }
+
+  if (!token) {
+    return (
+      <div className={`flex items-center gap-2 text-muted-foreground ${className}`}>
+        <Wallet className="w-4 h-4" />
+        <span className="text-sm">Select token</span>
       </div>
     );
   }
@@ -69,7 +78,7 @@ export const TokenBalanceDisplay = ({
         <span className="text-sm font-medium">{formattedBalance}</span>
         <span className="text-sm text-muted-foreground">{token.symbol}</span>
       </div>
-      {showUsdValue && usdValue && (
+      {showUsdValue && usdValue && usdValue > 0 && (
         <Badge variant="outline" className="text-xs">
           {formattedUsdValue}
         </Badge>
