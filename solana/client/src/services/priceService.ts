@@ -81,12 +81,31 @@ class PriceService {
   private priceCache = new Map<string, { price: TokenPrice; timestamp: number }>();
   private readonly cacheTimeout = 30000; // 30 seconds cache
 
+  // Map token addresses to their DexScreener compatible addresses
+  private getTokenAddressForAPI(tokenAddress: string, chainType: ChainType): string {
+    // Handle native tokens
+    if (chainType === 'solana') {
+      // SOL native token
+      if (tokenAddress === 'So11111111111111111111111111111111111111112' || tokenAddress === 'SOL') {
+        return 'So11111111111111111111111111111111111111112';
+      }
+      return tokenAddress;
+    } else {
+      // EVM native tokens
+      if (tokenAddress === '0x0000000000000000000000000000000000000000' || tokenAddress === 'ETH') {
+        return '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'; // WETH address
+      }
+      return tokenAddress.startsWith('0x') ? tokenAddress : `0x${tokenAddress}`;
+    }
+  }
+
   /**
    * Get token price from DexScreener API
    */
   async getTokenPrice(tokenAddress: string, chainType: ChainType): Promise<TokenPrice | null> {
     try {
-      const cacheKey = `${chainType}-${tokenAddress}`;
+      const apiAddress = this.getTokenAddressForAPI(tokenAddress, chainType);
+      const cacheKey = `${chainType}-${apiAddress}`;
       const cached = this.priceCache.get(cacheKey);
       
       // Return cached result if still valid
@@ -94,16 +113,23 @@ class PriceService {
         return cached.price;
       }
 
-      const response = await fetch(`${this.baseUrl}/${tokenAddress}`);
+      const response = await fetch(`${this.baseUrl}/${apiAddress}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        console.warn(`DexScreener API returned ${response.status} for ${apiAddress}`);
+        return this.getFallbackPrice(tokenAddress, chainType);
       }
 
       const data: DexScreenerResponse = await response.json();
       
       if (!data.pairs || data.pairs.length === 0) {
-        return null;
+        console.warn(`No pairs found for token ${apiAddress} on DexScreener`);
+        return this.getFallbackPrice(tokenAddress, chainType);
       }
 
       // Find the most liquid pair for better price accuracy
@@ -129,9 +155,58 @@ class PriceService {
 
       return tokenPrice;
     } catch (error) {
-      console.error('Error fetching token price:', error);
-      return null;
+      console.error('Error fetching token price from DexScreener:', error);
+      return this.getFallbackPrice(tokenAddress, chainType);
     }
+  }
+
+  /**
+   * Fallback price data for common tokens when API fails
+   */
+  private getFallbackPrice(tokenAddress: string, chainType: ChainType): TokenPrice | null {
+    // Common token fallback prices (should be updated regularly)
+    const fallbackPrices: Record<string, TokenPrice> = {
+      // Solana tokens
+      'So11111111111111111111111111111111111111112': {
+        price: 200, // SOL approximate price
+        priceChange24h: 0,
+        volume24h: 0,
+        marketCap: 0,
+        lastUpdated: Date.now(),
+      },
+      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': {
+        price: 1, // USDC
+        priceChange24h: 0,
+        volume24h: 0,
+        marketCap: 0,
+        lastUpdated: Date.now(),
+      },
+      'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': {
+        price: 1, // USDT
+        priceChange24h: 0,
+        volume24h: 0,
+        marketCap: 0,
+        lastUpdated: Date.now(),
+      },
+      // EVM tokens
+      '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2': {
+        price: 3000, // WETH approximate price
+        priceChange24h: 0,
+        volume24h: 0,
+        marketCap: 0,
+        lastUpdated: Date.now(),
+      },
+      '0xA0b86a33E6417946484e81aBceBa82A3a34fc5db7': {
+        price: 1, // USDC
+        priceChange24h: 0,
+        volume24h: 0,
+        marketCap: 0,
+        lastUpdated: Date.now(),
+      },
+    };
+
+    const key = this.getTokenAddressForAPI(tokenAddress, chainType);
+    return fallbackPrices[key] || null;
   }
 
   /**
@@ -144,7 +219,7 @@ class PriceService {
     const prices = new Map<string, TokenPrice>();
     
     // Process in batches to avoid rate limits
-    const batchSize = 5;
+    const batchSize = 3; // Reduced batch size to be more conservative
     for (let i = 0; i < tokenAddresses.length; i += batchSize) {
       const batch = tokenAddresses.slice(i, i + batchSize);
       const batchPromises = batch.map(address => 
@@ -161,7 +236,7 @@ class PriceService {
       
       // Add delay between batches to respect rate limits
       if (i + batchSize < tokenAddresses.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
     
@@ -193,7 +268,18 @@ class PriceService {
       'So11111111111111111111111111111111111111112',
       'solana'
     );
-    return solPrice?.price || 0;
+    return solPrice?.price || 200; // fallback price
+  }
+
+  /**
+   * Get Ethereum price (ETH/WETH)
+   */
+  async getETHPrice(): Promise<number> {
+    const ethPrice = await this.getTokenPrice(
+      '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      'evm'
+    );
+    return ethPrice?.price || 3000; // fallback price
   }
 
   /**

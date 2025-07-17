@@ -4,7 +4,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Star, TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
 import { TokenWithMetadata, ChainType } from "@/types";
 import { formatNumber } from "@/lib/utils";
-import { useTokenBalance } from "@/hooks/useTokenBalance";
 
 interface TokenListItemProps {
   token: TokenWithMetadata;
@@ -15,6 +14,8 @@ interface TokenListItemProps {
   isPopular?: boolean;
   isRecent?: boolean;
   isConnected?: boolean;
+  balance?: string;
+  usdValue?: number;
 }
 
 export const TokenListItem = ({
@@ -26,14 +27,9 @@ export const TokenListItem = ({
   isPopular = false,
   isRecent = false,
   isConnected = false,
+  balance,
+  usdValue,
 }: TokenListItemProps) => {
-  // Get real-time balance for connected wallet
-  const { balance, isLoading: isBalanceLoading } = useTokenBalance({
-    token,
-    chainType,
-    enabled: isConnected && showBalance,
-  });
-
   const handleSelect = () => {
     onSelect(token);
   };
@@ -42,7 +38,7 @@ export const TokenListItem = ({
     if (chainType === 'solana') {
       return `https://solscan.io/token/${token.address}`;
     }
-    
+
     const baseUrls: Record<number, string> = {
       1: 'https://etherscan.io/token/',
       137: 'https://polygonscan.com/token/',
@@ -50,10 +46,31 @@ export const TokenListItem = ({
       10: 'https://optimistic.etherscan.io/token/',
       8453: 'https://basescan.org/token/',
     };
-    
+
     const baseUrl = baseUrls[token.chainId || 1] || baseUrls[1];
     return `${baseUrl}${token.address}`;
   };
+
+  // Format balance display
+  const formatBalance = (bal: string) => {
+    const num = parseFloat(bal);
+    if (num === 0) return '0';
+    if (num < 0.0001) return '< 0.0001';
+    return formatNumber(num, 6);
+  };
+
+  // Format USD value display
+  const formatUSDValue = (value: number) => {
+    if (value === 0) return '$0.00';
+    if (value < 0.01) return '< $0.01';
+    if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
+    if (value >= 1000) return `$${(value / 1000).toFixed(2)}K`;
+    return `$${value.toFixed(2)}`;
+  };
+
+  // Determine if we should show the balance
+  const shouldShowBalance = showBalance && isConnected && balance !== undefined;
+  const hasBalance = shouldShowBalance && parseFloat(balance || '0') > 0;
 
   return (
     <Button
@@ -64,13 +81,13 @@ export const TokenListItem = ({
       <div className="flex items-center gap-3 flex-1">
         {/* Token Icon */}
         <div className="relative">
-          <div 
+          <div
             className="w-10 h-10 rounded-full bg-gradient-cosmic flex items-center justify-center overflow-hidden"
           >
             {token.logoURI ? (
-              <img 
-                src={token.logoURI} 
-                alt={token.symbol} 
+              <img
+                src={token.logoURI}
+                alt={token.symbol}
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   // Fallback to gradient with symbol
@@ -84,7 +101,7 @@ export const TokenListItem = ({
               {token.symbol.charAt(0)}
             </span>
           </div>
-          
+
           {/* Popular/Recent indicator */}
           {(isPopular || isRecent) && (
             <div className="absolute -top-1 -right-1">
@@ -120,7 +137,7 @@ export const TokenListItem = ({
           <div className="text-sm text-muted-foreground truncate">
             {token.name}
           </div>
-          
+
           {/* Market info */}
           {showPrice && token.priceUSD && token.priceUSD > 0 && (
             <div className="flex items-center gap-2 mt-1">
@@ -128,9 +145,8 @@ export const TokenListItem = ({
                 ${formatNumber(token.priceUSD, 4)}
               </span>
               {token.priceChange24h !== undefined && (
-                <div className={`flex items-center gap-1 text-xs ${
-                  token.priceChange24h >= 0 ? 'text-green-500' : 'text-red-500'
-                }`}>
+                <div className={`flex items-center gap-1 text-xs ${token.priceChange24h >= 0 ? 'text-green-500' : 'text-red-500'
+                  }`}>
                   {token.priceChange24h >= 0 ? (
                     <TrendingUp className="w-3 h-3" />
                   ) : (
@@ -146,22 +162,33 @@ export const TokenListItem = ({
 
       {/* Balance and Chain Info */}
       <div className="text-right space-y-1">
-        {showBalance && isConnected && (
-          <div className="text-sm font-medium">
-            {isBalanceLoading ? (
-              <Skeleton className="h-4 w-16" />
-            ) : (
-              formatNumber(parseFloat(balance || '0'), 6)
+        {shouldShowBalance && (
+          <div className="space-y-1">
+            {/* Only show balance if it's greater than 0 */}
+            {balance && parseFloat(balance) > 0 && (
+              <div className="text-sm font-medium">
+                {formatBalance(balance)}
+              </div>
+            )}
+            {/* Only show USD value if it's greater than 0 */}
+            {usdValue !== undefined && usdValue > 0 && (
+              <div className="text-xs text-muted-foreground">
+                {formatUSDValue(usdValue)}
+              </div>
             )}
           </div>
         )}
-        
+        {!shouldShowBalance && token.volume24h && token.volume24h > 0 && (
+          <div className="text-xs text-muted-foreground">
+            Vol: ${formatNumber(token.volume24h)}
+          </div>
+        )}
+
         <div className="flex items-center gap-1">
           <Badge variant="outline" className="text-xs">
             {token.chainId ? getChainName(token.chainId) : 'Solana'}
           </Badge>
-          
-          {/* Explorer link */}
+
           <Button
             variant="ghost"
             size="sm"
@@ -174,12 +201,6 @@ export const TokenListItem = ({
             <ExternalLink className="w-3 h-3" />
           </Button>
         </div>
-        
-        {token.volume24h && token.volume24h > 0 && (
-          <div className="text-xs text-muted-foreground">
-            Vol: ${formatNumber(token.volume24h)}
-          </div>
-        )}
       </div>
     </Button>
   );
@@ -208,6 +229,6 @@ function getChainName(chainId: number): string {
     10: 'Optimism',
     8453: 'Base',
   };
-  
+
   return chainNames[chainId] || `Chain ${chainId}`;
 }

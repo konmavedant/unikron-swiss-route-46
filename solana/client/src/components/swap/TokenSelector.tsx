@@ -5,10 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, ChevronDown, Star, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Search, ChevronDown, Star, Clock, AlertCircle, Loader2, Wallet } from "lucide-react";
 import { useState, useMemo, useCallback } from "react";
 import { Token, TokenWithMetadata, ChainType } from "@/types";
 import { useTokenData } from "@/hooks/useTokenData";
+import { useTokenBalances } from "@/hooks/useTokenBalance";
 import { TokenListItem, TokenListItemSkeleton } from "./TokenListItem";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 
@@ -23,9 +26,9 @@ interface TokenSelectorProps {
   placeholder?: string;
 }
 
-export const TokenSelector = ({ 
-  selectedToken, 
-  onTokenSelect, 
+export const TokenSelector = ({
+  selectedToken,
+  onTokenSelect,
   chainType,
   label = "Select Token",
   disabled = false,
@@ -36,10 +39,11 @@ export const TokenSelector = ({
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("popular");
+  const [hideZeroBalances, setHideZeroBalances] = useState(true);
 
   // Get wallet connection status
   const { isAnyWalletConnected, evmConnected, solanaConnected } = useWalletConnection();
-  
+
   // Check if connected to the correct chain
   const isConnectedToChain = useMemo(() => {
     if (chainType === 'evm') {
@@ -59,19 +63,48 @@ export const TokenSelector = ({
     addRecentToken,
   } = useTokenData(chainType);
 
-  // Filter tokens based on search query
+  // Fetch user token balances (only for connected wallets)
+  const { balances: userBalances, isLoading: isLoadingBalances } = useTokenBalances(
+    tokens,
+    chainType,
+    hideZeroBalances && isConnectedToChain
+  );
+
+  // Create a map of token addresses to balances for quick lookup
+  const balanceMap = useMemo(() => {
+    const map = new Map<string, { balance: string; usdValue?: number }>();
+    userBalances.forEach(balance => {
+      map.set(balance.token.address, {
+        balance: balance.balance,
+        usdValue: balance.usdValue
+      });
+    });
+    return map;
+  }, [userBalances]);
+
+  // Filter tokens based on search query and balance filter
   const filteredTokens = useMemo(() => {
+    let tokensToFilter = tokens;
+
+    // If connected and hideZeroBalances is enabled, show only tokens with balances
+    if (isConnectedToChain && hideZeroBalances) {
+      tokensToFilter = tokens.filter(token => {
+        const balance = balanceMap.get(token.address);
+        return balance && parseFloat(balance.balance) > 0;
+      });
+    }
+
     if (!searchQuery.trim()) {
-      return tokens;
+      return tokensToFilter;
     }
 
     const query = searchQuery.toLowerCase().trim();
-    return tokens.filter(token =>
+    return tokensToFilter.filter(token =>
       token.symbol.toLowerCase().includes(query) ||
       token.name.toLowerCase().includes(query) ||
       token.address.toLowerCase().includes(query)
     );
-  }, [tokens, searchQuery]);
+  }, [tokens, searchQuery, isConnectedToChain, hideZeroBalances, balanceMap]);
 
   // Group tokens by category
   const tokenGroups = useMemo(() => {
@@ -85,13 +118,29 @@ export const TokenSelector = ({
       };
     }
 
+    let popularList = popularTokens.slice(0, 8);
+    let recentList = recentTokens;
+
+    // Filter popular and recent tokens if hideZeroBalances is enabled and wallet is connected
+    if (isConnectedToChain && hideZeroBalances) {
+      popularList = popularList.filter(token => {
+        const balance = balanceMap.get(token.address);
+        return balance && parseFloat(balance.balance) > 0;
+      });
+
+      recentList = recentList.filter(token => {
+        const balance = balanceMap.get(token.address);
+        return balance && parseFloat(balance.balance) > 0;
+      });
+    }
+
     return {
       filtered: [],
-      popular: popularTokens.slice(0, 8),
-      recent: recentTokens,
-      all: tokens,
+      popular: popularList,
+      recent: recentList,
+      all: filteredTokens,
     };
-  }, [filteredTokens, popularTokens, recentTokens, tokens, searchQuery]);
+  }, [filteredTokens, popularTokens, recentTokens, searchQuery, isConnectedToChain, hideZeroBalances, balanceMap]);
 
   const handleTokenSelect = useCallback((token: TokenWithMetadata) => {
     onTokenSelect(token);
@@ -122,8 +171,8 @@ export const TokenSelector = ({
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-gradient-cosmic flex items-center justify-center overflow-hidden">
               {selectedToken.logoURI ? (
-                <img 
-                  src={selectedToken.logoURI} 
+                <img
+                  src={selectedToken.logoURI}
                   alt={selectedToken.symbol}
                   className="w-full h-full object-cover"
                 />
@@ -142,7 +191,7 @@ export const TokenSelector = ({
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md max-h-[80vh] p-0">
+        <DialogContent className="max-w-md max-h-[75vh] p-0">
           <DialogHeader className="p-6 pb-4">
             <DialogTitle className="flex items-center gap-2">
               Select Token
@@ -158,7 +207,7 @@ export const TokenSelector = ({
             </DialogTitle>
           </DialogHeader>
 
-          <div className="px-6 pb-4">
+          <div className="px-6 pb-4 space-y-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -169,6 +218,23 @@ export const TokenSelector = ({
                 autoFocus
               />
             </div>
+
+            {/* Balance Filter Toggle - Only show when wallet is connected */}
+            {isConnectedToChain && (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-muted-foreground" />
+                  <Label htmlFor="hide-zero-balances" className="text-sm font-medium">
+                    Hide zero balances
+                  </Label>
+                </div>
+                <Switch
+                  id="hide-zero-balances"
+                  checked={hideZeroBalances}
+                  onCheckedChange={setHideZeroBalances}
+                />
+              </div>
+            )}
           </div>
 
           {error ? (
@@ -197,20 +263,22 @@ export const TokenSelector = ({
                     <Star className="w-3 h-3" />
                     Popular
                   </TabsTrigger>
-                  {recentTokens.length > 0 && (
+                  {tokenGroups.recent.length > 0 && (
                     <TabsTrigger value="recent" className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       Recent
                     </TabsTrigger>
                   )}
-                  <TabsTrigger value="all">All</TabsTrigger>
+                  <TabsTrigger value="all">
+                    {isConnectedToChain && hideZeroBalances ? 'My Tokens' : 'All'}
+                  </TabsTrigger>
                 </TabsList>
               )}
 
               <div className="flex-1 min-h-0">
                 {/* Search Results */}
                 {searchQuery.trim() && (
-                  <ScrollArea className="h-96 px-6 pb-6">
+                  <ScrollArea className="h-86 px-6 pb-6">
                     {tokenGroups.filtered.length > 0 ? (
                       <div className="space-y-1">
                         {tokenGroups.filtered.map((token) => (
@@ -222,6 +290,8 @@ export const TokenSelector = ({
                             showBalance={showBalance}
                             showPrice={showPrice}
                             isConnected={isConnectedToChain}
+                            balance={balanceMap.get(token.address)?.balance}
+                            usdValue={balanceMap.get(token.address)?.usdValue}
                           />
                         ))}
                       </div>
@@ -238,8 +308,14 @@ export const TokenSelector = ({
                 {/* Popular Tokens */}
                 {!searchQuery.trim() && (
                   <TabsContent value="popular" className="mt-0">
-                    <ScrollArea className="h-96 px-6 pb-6">
-                      {tokenGroups.popular.length > 0 ? (
+                    <ScrollArea className="h-86 px-6 pb-6">
+                      {isLoadingBalances && isConnectedToChain ? (
+                        <div className="space-y-1">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <TokenListItemSkeleton key={i} />
+                          ))}
+                        </div>
+                      ) : tokenGroups.popular.length > 0 ? (
                         <div className="space-y-1">
                           {tokenGroups.popular.map((token) => (
                             <TokenListItem
@@ -251,8 +327,16 @@ export const TokenSelector = ({
                               showPrice={showPrice}
                               isPopular
                               isConnected={isConnectedToChain}
+                              balance={balanceMap.get(token.address)?.balance}
+                              usdValue={balanceMap.get(token.address)?.usdValue}
                             />
                           ))}
+                        </div>
+                      ) : isConnectedToChain && hideZeroBalances ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Wallet className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p>No tokens with balance found</p>
+                          <p className="text-sm mt-1">Try turning off "Hide zero balances"</p>
                         </div>
                       ) : (
                         <div className="text-center py-8 text-muted-foreground">
@@ -265,9 +349,9 @@ export const TokenSelector = ({
                 )}
 
                 {/* Recent Tokens */}
-                {!searchQuery.trim() && recentTokens.length > 0 && (
+                {!searchQuery.trim() && tokenGroups.recent.length > 0 && (
                   <TabsContent value="recent" className="mt-0">
-                    <ScrollArea className="h-96 px-6 pb-6">
+                    <ScrollArea className="h-86 px-6 pb-6">
                       <div className="space-y-1">
                         {tokenGroups.recent.map((token) => (
                           <TokenListItem
@@ -279,6 +363,8 @@ export const TokenSelector = ({
                             showPrice={showPrice}
                             isRecent
                             isConnected={isConnectedToChain}
+                            balance={balanceMap.get(token.address)?.balance}
+                            usdValue={balanceMap.get(token.address)?.usdValue}
                           />
                         ))}
                       </div>
@@ -289,8 +375,14 @@ export const TokenSelector = ({
                 {/* All Tokens */}
                 {!searchQuery.trim() && (
                   <TabsContent value="all" className="mt-0">
-                    <ScrollArea className="h-96 px-6 pb-6">
-                      {tokenGroups.all.length > 0 ? (
+                    <ScrollArea className="h-86 px-6 pb-6">
+                      {isLoadingBalances && isConnectedToChain ? (
+                        <div className="space-y-1">
+                          {Array.from({ length: 8 }).map((_, i) => (
+                            <TokenListItemSkeleton key={i} />
+                          ))}
+                        </div>
+                      ) : tokenGroups.all.length > 0 ? (
                         <div className="space-y-1">
                           {tokenGroups.all.map((token) => (
                             <TokenListItem
@@ -301,8 +393,16 @@ export const TokenSelector = ({
                               showBalance={showBalance}
                               showPrice={showPrice}
                               isConnected={isConnectedToChain}
+                              balance={balanceMap.get(token.address)?.balance}
+                              usdValue={balanceMap.get(token.address)?.usdValue}
                             />
                           ))}
+                        </div>
+                      ) : isConnectedToChain && hideZeroBalances ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Wallet className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p>No tokens with balance found</p>
+                          <p className="text-sm mt-1">Try turning off "Hide zero balances"</p>
                         </div>
                       ) : (
                         <div className="space-y-1">
@@ -322,7 +422,12 @@ export const TokenSelector = ({
           <div className="px-6 pb-4 pt-2 border-t">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
-                {isConnectedToChain ? 'Balances are live' : 'Connect wallet to see balances'}
+                {isConnectedToChain
+                  ? (hideZeroBalances
+                    ? 'Showing tokens with balance only'
+                    : 'Live balances and prices')
+                  : 'Connect wallet to see balances'
+                }
               </p>
               {isConnectedToChain && (
                 <Badge variant="outline" className="text-xs text-green-600 border-green-600">

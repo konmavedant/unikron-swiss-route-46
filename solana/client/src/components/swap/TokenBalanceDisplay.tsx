@@ -12,12 +12,12 @@ interface TokenBalanceDisplayProps {
   className?: string;
 }
 
-export const TokenBalanceDisplay = ({ 
-  token, 
-  chainType, 
-  isConnected, 
+export const TokenBalanceDisplay = ({
+  token,
+  chainType,
+  isConnected,
   showUsdValue = true,
-  className = "" 
+  className = ""
 }: TokenBalanceDisplayProps) => {
   const { balance, usdValue, isLoading, error } = useTokenBalance({
     token,
@@ -60,16 +60,52 @@ export const TokenBalanceDisplay = ({
     );
   }
 
-  const formattedBalance = parseFloat(balance).toLocaleString(undefined, {
-    maximumFractionDigits: 6,
-    minimumFractionDigits: 0,
-  });
+  // Format balance with appropriate decimal places
+  // Replace the formatBalance function with this improved version:
+  const formatBalance = (bal: string) => {
+    const num = parseFloat(bal);
+    if (num === 0 || isNaN(num)) return '0';
 
-  const formattedUsdValue = usdValue?.toLocaleString(undefined, {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-  });
+    // Don't show if balance is effectively zero
+    if (num < 0.000001) return '0';
+
+    // For very small amounts but not zero
+    if (num < 0.0001) return '< 0.0001';
+
+    // For small amounts, show more decimals
+    if (num < 0.01) {
+      return num.toFixed(6).replace(/\.?0+$/, ''); // Remove trailing zeros
+    }
+
+    // For larger amounts, show fewer decimals
+    return num.toLocaleString(undefined, {
+      maximumFractionDigits: 4,
+      minimumFractionDigits: 0,
+    });
+  };
+
+  // Format USD value
+  const formatUsdValue = (value: number) => {
+    if (value === 0) return '$0.00';
+    if (value < 0.01) return '< $0.01';
+
+    if (value >= 1000000) {
+      return `$${(value / 1000000).toFixed(2)}M`;
+    }
+
+    if (value >= 1000) {
+      return `$${(value / 1000).toFixed(2)}K`;
+    }
+
+    return value.toLocaleString('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const formattedBalance = formatBalance(balance);
+  const balanceNum = parseFloat(balance);
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
@@ -78,9 +114,9 @@ export const TokenBalanceDisplay = ({
         <span className="text-sm font-medium">{formattedBalance}</span>
         <span className="text-sm text-muted-foreground">{token.symbol}</span>
       </div>
-      {showUsdValue && usdValue && usdValue > 0 && (
+      {showUsdValue && usdValue !== undefined && usdValue > 0 && (
         <Badge variant="outline" className="text-xs">
-          {formattedUsdValue}
+          {formatUsdValue(usdValue)}
         </Badge>
       )}
     </div>

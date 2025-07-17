@@ -51,7 +51,7 @@ const mockSolanaTokens = [
     symbol: "SOL",
     name: "Solana",
     decimals: 9,
-    logoURI: "https://tokens.coingecko.com/solana/images/thumb_logo.png",
+    logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
     verified: true,
     tags: ["native"]
   },
@@ -60,7 +60,7 @@ const mockSolanaTokens = [
     symbol: "USDC",
     name: "USD Coin",
     decimals: 6,
-    logoURI: "https://tokens.coingecko.com/usd-coin/images/thumb_logo.png",
+    logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
     verified: true,
     tags: ["stablecoin"]
   },
@@ -69,19 +69,19 @@ const mockSolanaTokens = [
     symbol: "USDT",
     name: "Tether USD",
     decimals: 6,
-    logoURI: "https://tokens.coingecko.com/tether/images/thumb_logo.png",
+    logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.png",
     verified: true,
     tags: ["stablecoin"]
   },
-  {
-    address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
-    symbol: "RAY",
-    name: "Raydium",
-    decimals: 6,
-    logoURI: "https://tokens.coingecko.com/raydium/images/thumb_logo.png",
-    verified: true,
-    tags: ["defi"]
-  }
+  // {
+  //   address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+  //   symbol: "RAY",
+  //   name: "Raydium",
+  //   decimals: 6,
+  //   logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R/logo.svg",
+  //   verified: true,
+  //   tags: ["defi"]
+  // }
 ];
 
 // Hook for fetching and managing token data
@@ -113,7 +113,7 @@ export function useTokenData(chainType: ChainType) {
   });
 
   // Fetch token prices (optional)
-  const tokenAddresses = useMemo(() => 
+  const tokenAddresses = useMemo(() =>
     tokens.slice(0, 50).map(token => token.address), // Limit to top 50 for performance
     [tokens]
   );
@@ -146,7 +146,7 @@ export function useTokenData(chainType: ChainType) {
   }, [tokens, tokenPrices, chainType]);
 
   // Popular tokens (hardcoded for now, could come from API)
-  const popularTokens = useMemo(() => 
+  const popularTokens = useMemo(() =>
     tokensWithMetadata.filter(token => token.isPopular),
     [tokensWithMetadata]
   );
@@ -156,9 +156,9 @@ export function useTokenData(chainType: ChainType) {
     try {
       const stored = localStorage.getItem(`recentTokens_${chainType}_${address}`);
       if (!stored) return [];
-      
+
       const recentAddresses = JSON.parse(stored) as string[];
-      return tokensWithMetadata.filter(token => 
+      return tokensWithMetadata.filter(token =>
         recentAddresses.includes(token.address)
       ).slice(0, 5);
     } catch {
@@ -169,18 +169,18 @@ export function useTokenData(chainType: ChainType) {
   // Save recent token selection
   const addRecentToken = (token: Token) => {
     if (!address) return;
-    
+
     try {
       const key = `recentTokens_${chainType}_${address}`;
       const stored = localStorage.getItem(key);
       const existing = stored ? JSON.parse(stored) : [];
-      
+
       // Add to front, remove duplicates, limit to 10
       const updated = [
         token.address,
         ...existing.filter((addr: string) => addr !== token.address)
       ].slice(0, 10);
-      
+
       localStorage.setItem(key, JSON.stringify(updated));
     } catch (error) {
       console.warn('Failed to save recent token:', error);
@@ -203,11 +203,11 @@ function isPopularToken(symbol: string, chainType: ChainType): boolean {
   const evmPopularSymbols = [
     'ETH', 'WETH', 'USDC', 'USDT', 'DAI', 'WBTC', 'UNI', 'LINK', 'AAVE', 'COMP',
   ];
-  
+
   const solanaPopularSymbols = [
     'SOL', 'USDC', 'USDT', 'RAY', 'SRM', 'FIDA', 'STEP', 'COPE', 'MEDIA', 'ROPE',
   ];
-  
+
   const popularSymbols = chainType === 'evm' ? evmPopularSymbols : solanaPopularSymbols;
   return popularSymbols.includes(symbol.toUpperCase());
 }
