@@ -14,8 +14,8 @@ import { useTokenData } from "@/hooks/useTokenData";
 const Index = () => {
   const { 
     evmConnected, 
-    evmAddress, 
-    chainId, 
+    evmAddress,
+    chainId,
     solanaConnected, 
     solanaAddress, 
     isAnyWalletConnected,
@@ -83,7 +83,7 @@ const Index = () => {
                   address={(evmAddress || solanaAddress)!}
                   chainType={evmConnected ? 'evm' : 'solana'}
                   chainId={chainId}
-                  balance="1.234"
+                  balance=""
                   onDisconnect={handleWalletDisconnect}
                 />
               ) : (

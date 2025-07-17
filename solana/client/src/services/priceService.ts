@@ -1,0 +1,231 @@
+// src/services/priceService.ts
+import { ChainType } from '@/types';
+
+interface DexScreenerPair {
+  chainId: string;
+  dexId: string;
+  url: string;
+  pairAddress: string;
+  baseToken: {
+    address: string;
+    name: string;
+    symbol: string;
+  };
+  quoteToken: {
+    address: string;
+    name: string;
+    symbol: string;
+  };
+  priceNative: string;
+  priceUsd: string;
+  txns: {
+    m5: {
+      buys: number;
+      sells: number;
+    };
+    h1: {
+      buys: number;
+      sells: number;
+    };
+    h6: {
+      buys: number;
+      sells: number;
+    };
+    h24: {
+      buys: number;
+      sells: number;
+    };
+  };
+  volume: {
+    h24: number;
+    h6: number;
+    h1: number;
+    m5: number;
+  };
+  priceChange: {
+    m5: number;
+    h1: number;
+    h6: number;
+    h24: number;
+  };
+  liquidity: {
+    usd: number;
+    base: number;
+    quote: number;
+  };
+  fdv: number;
+  marketCap: number;
+  pairCreatedAt: number;
+  info: {
+    imageUrl: string;
+    websites: { url: string }[];
+    socials: { type: string; url: string }[];
+  };
+}
+
+interface DexScreenerResponse {
+  schemaVersion: string;
+  pairs: DexScreenerPair[];
+}
+
+interface TokenPrice {
+  price: number;
+  priceChange24h: number;
+  volume24h: number;
+  marketCap: number;
+  lastUpdated: number;
+}
+
+class PriceService {
+  private baseUrl = 'https://api.dexscreener.com/latest/dex/tokens';
+  private priceCache = new Map<string, { price: TokenPrice; timestamp: number }>();
+  private readonly cacheTimeout = 30000; // 30 seconds cache
+
+  /**
+   * Get token price from DexScreener API
+   */
+  async getTokenPrice(tokenAddress: string, chainType: ChainType): Promise<TokenPrice | null> {
+    try {
+      const cacheKey = `${chainType}-${tokenAddress}`;
+      const cached = this.priceCache.get(cacheKey);
+      
+      // Return cached result if still valid
+      if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+        return cached.price;
+      }
+
+      const response = await fetch(`${this.baseUrl}/${tokenAddress}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data: DexScreenerResponse = await response.json();
+      
+      if (!data.pairs || data.pairs.length === 0) {
+        return null;
+      }
+
+      // Find the most liquid pair for better price accuracy
+      const bestPair = data.pairs.reduce((best, current) => {
+        const currentLiquidity = current.liquidity?.usd || 0;
+        const bestLiquidity = best.liquidity?.usd || 0;
+        return currentLiquidity > bestLiquidity ? current : best;
+      });
+
+      const tokenPrice: TokenPrice = {
+        price: parseFloat(bestPair.priceUsd) || 0,
+        priceChange24h: bestPair.priceChange?.h24 || 0,
+        volume24h: bestPair.volume?.h24 || 0,
+        marketCap: bestPair.marketCap || 0,
+        lastUpdated: Date.now(),
+      };
+
+      // Cache the result
+      this.priceCache.set(cacheKey, {
+        price: tokenPrice,
+        timestamp: Date.now(),
+      });
+
+      return tokenPrice;
+    } catch (error) {
+      console.error('Error fetching token price:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get multiple token prices in batch
+   */
+  async getTokenPrices(
+    tokenAddresses: string[],
+    chainType: ChainType
+  ): Promise<Map<string, TokenPrice>> {
+    const prices = new Map<string, TokenPrice>();
+    
+    // Process in batches to avoid rate limits
+    const batchSize = 5;
+    for (let i = 0; i < tokenAddresses.length; i += batchSize) {
+      const batch = tokenAddresses.slice(i, i + batchSize);
+      const batchPromises = batch.map(address => 
+        this.getTokenPrice(address, chainType)
+      );
+      
+      const batchResults = await Promise.allSettled(batchPromises);
+      
+      batchResults.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value) {
+          prices.set(batch[index], result.value);
+        }
+      });
+      
+      // Add delay between batches to respect rate limits
+      if (i + batchSize < tokenAddresses.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    
+    return prices;
+  }
+
+  /**
+   * Calculate USD value for a token amount
+   */
+  async calculateUSDValue(
+    tokenAddress: string,
+    amount: string,
+    chainType: ChainType
+  ): Promise<number> {
+    const price = await this.getTokenPrice(tokenAddress, chainType);
+    if (!price) return 0;
+    
+    const tokenAmount = parseFloat(amount);
+    if (isNaN(tokenAmount) || tokenAmount <= 0) return 0;
+    
+    return tokenAmount * price.price;
+  }
+
+  /**
+   * Get Solana native token price (SOL)
+   */
+  async getSOLPrice(): Promise<number> {
+    const solPrice = await this.getTokenPrice(
+      'So11111111111111111111111111111111111111112',
+      'solana'
+    );
+    return solPrice?.price || 0;
+  }
+
+  /**
+   * Clear price cache
+   */
+  clearCache(): void {
+    this.priceCache.clear();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): { size: number; keys: string[] } {
+    return {
+      size: this.priceCache.size,
+      keys: Array.from(this.priceCache.keys()),
+    };
+  }
+}
+
+// Export singleton instance
+export const priceService = new PriceService();
+
+// Export class for testing
+export { PriceService };
+
+// Helper function to get chain-specific token address formatting
+export function formatTokenAddressForDexScreener(address: string, chainType: ChainType): string {
+  if (chainType === 'solana') {
+    return address;
+  } else {
+    // For EVM chains, ensure address starts with 0x
+    return address.startsWith('0x') ? address : `0x${address}`;
+  }
+}

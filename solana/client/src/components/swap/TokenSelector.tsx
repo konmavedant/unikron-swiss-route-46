@@ -10,6 +10,7 @@ import { useState, useMemo, useCallback } from "react";
 import { Token, TokenWithMetadata, ChainType } from "@/types";
 import { useTokenData } from "@/hooks/useTokenData";
 import { TokenListItem, TokenListItemSkeleton } from "./TokenListItem";
+import { useWalletConnection } from "@/hooks/useWalletConnection";
 
 interface TokenSelectorProps {
   selectedToken?: Token;
@@ -35,6 +36,18 @@ export const TokenSelector = ({
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("popular");
+
+  // Get wallet connection status
+  const { isAnyWalletConnected, evmConnected, solanaConnected } = useWalletConnection();
+  
+  // Check if connected to the correct chain
+  const isConnectedToChain = useMemo(() => {
+    if (chainType === 'evm') {
+      return evmConnected;
+    } else {
+      return solanaConnected;
+    }
+  }, [chainType, evmConnected, solanaConnected]);
 
   // Fetch token data
   const {
@@ -136,6 +149,12 @@ export const TokenSelector = ({
               <Badge variant="outline" className="text-xs">
                 {chainType === 'evm' ? 'EVM' : 'Solana'}
               </Badge>
+              {/* Connection Status Badge */}
+              {isConnectedToChain && (
+                <Badge variant="outline" className="text-xs text-green-600 border-green-600">
+                  Connected
+                </Badge>
+              )}
             </DialogTitle>
           </DialogHeader>
 
@@ -202,6 +221,7 @@ export const TokenSelector = ({
                             chainType={chainType}
                             showBalance={showBalance}
                             showPrice={showPrice}
+                            isConnected={isConnectedToChain}
                           />
                         ))}
                       </div>
@@ -230,6 +250,7 @@ export const TokenSelector = ({
                               showBalance={showBalance}
                               showPrice={showPrice}
                               isPopular
+                              isConnected={isConnectedToChain}
                             />
                           ))}
                         </div>
@@ -257,6 +278,7 @@ export const TokenSelector = ({
                             showBalance={showBalance}
                             showPrice={showPrice}
                             isRecent
+                            isConnected={isConnectedToChain}
                           />
                         ))}
                       </div>
@@ -278,6 +300,7 @@ export const TokenSelector = ({
                               chainType={chainType}
                               showBalance={showBalance}
                               showPrice={showPrice}
+                              isConnected={isConnectedToChain}
                             />
                           ))}
                         </div>
@@ -297,9 +320,16 @@ export const TokenSelector = ({
 
           {/* Footer info */}
           <div className="px-6 pb-4 pt-2 border-t">
-            <p className="text-xs text-muted-foreground text-center">
-              Always verify token contracts before trading
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                {isConnectedToChain ? 'Balances are live' : 'Connect wallet to see balances'}
+              </p>
+              {isConnectedToChain && (
+                <Badge variant="outline" className="text-xs text-green-600 border-green-600">
+                  ✓ Connected
+                </Badge>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

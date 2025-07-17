@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Star, TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
 import { TokenWithMetadata, ChainType } from "@/types";
 import { formatNumber } from "@/lib/utils";
+import { useTokenBalance } from "@/hooks/useTokenBalance";
 
 interface TokenListItemProps {
   token: TokenWithMetadata;
@@ -13,6 +14,7 @@ interface TokenListItemProps {
   showPrice?: boolean;
   isPopular?: boolean;
   isRecent?: boolean;
+  isConnected?: boolean;
 }
 
 export const TokenListItem = ({
@@ -23,7 +25,15 @@ export const TokenListItem = ({
   showPrice = true,
   isPopular = false,
   isRecent = false,
+  isConnected = false,
 }: TokenListItemProps) => {
+  // Get real-time balance for connected wallet
+  const { balance, isLoading: isBalanceLoading } = useTokenBalance({
+    token,
+    chainType,
+    enabled: isConnected && showBalance,
+  });
+
   const handleSelect = () => {
     onSelect(token);
   };
@@ -136,9 +146,13 @@ export const TokenListItem = ({
 
       {/* Balance and Chain Info */}
       <div className="text-right space-y-1">
-        {showBalance && token.balance && (
+        {showBalance && isConnected && (
           <div className="text-sm font-medium">
-            {formatNumber(parseFloat(token.balance), 4)}
+            {isBalanceLoading ? (
+              <Skeleton className="h-4 w-16" />
+            ) : (
+              formatNumber(parseFloat(balance || '0'), 6)
+            )}
           </div>
         )}
         
