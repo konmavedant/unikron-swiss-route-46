@@ -1,3 +1,4 @@
+// src/types/global.d.ts (Updated)
 declare global {
   interface ImportMetaEnv {
     readonly VITE_API_URL: string;
@@ -7,11 +8,21 @@ declare global {
     readonly VITE_ENVIRONMENT: 'development' | 'staging' | 'production';
     readonly VITE_ENABLE_ANALYTICS: string;
     readonly VITE_SENTRY_DSN: string;
+    readonly VITE_JUPITER_API_URL: string;
+    readonly VITE_ENABLE_DEVNET: string;
+    readonly VITE_ENABLE_MEV_PROTECTION: string;
+    readonly MODE: string;
+    readonly DEV: boolean;
+    readonly PROD: boolean;
+    readonly SSR: boolean;
   }
 
   interface ImportMeta {
     readonly env: ImportMetaEnv;
   }
+
+  // Add Node.js compatibility
+  var global: typeof globalThis;
 }
 
 // Window object extensions

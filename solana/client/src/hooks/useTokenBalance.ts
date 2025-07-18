@@ -1,10 +1,11 @@
+// src/hooks/useTokenBalance.ts (Fixed)
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Token, ChainType } from '@/types';
 import { useAccount } from 'wagmi';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
 import { priceService } from '@/services/priceService';
 
 interface TokenBalance {
@@ -21,7 +22,7 @@ interface UseTokenBalanceProps {
   enabled?: boolean;
 }
 
-// Real Solana balance fetching
+// Fixed Solana balance fetching
 const fetchSolanaBalance = async (
   token: Token,
   userAddress: string,
@@ -31,43 +32,75 @@ const fetchSolanaBalance = async (
     const publicKey = new PublicKey(userAddress);
 
     // Native SOL balance
-    if (token.symbol === 'SOL' || token.address === 'So11111111111111111111111111111111111111112') {
+    if (token.symbol === 'SOL' || 
+        token.address === 'So11111111111111111111111111111111111111112' ||
+        token.address === '11111111111111111111111111111111') {
+      
+      console.log('Fetching SOL balance for:', userAddress);
       const balance = await connection.getBalance(publicKey);
       const balanceInSol = balance / LAMPORTS_PER_SOL;
+      
+      console.log('SOL Balance (lamports):', balance);
+      console.log('SOL Balance (SOL):', balanceInSol);
 
-      // Get real-time SOL price from DexScreener
-      const priceData = await priceService.getTokenPrice(token.address, 'solana');
-      const usdValue = priceData ? balanceInSol * priceData.price : 0;
+      // Get real-time SOL price
+      let usdValue = 0;
+      try {
+        const priceData = await priceService.getTokenPrice(token.address, 'solana');
+        usdValue = priceData ? balanceInSol * priceData.price : 0;
+      } catch (priceError) {
+        console.warn('Failed to fetch SOL price:', priceError);
+        // Use fallback price
+        usdValue = balanceInSol * 100; // Approximate SOL price
+      }
 
       return {
-        balance: balanceInSol.toFixed(6),
+        balance: balanceInSol.toString(),
         usdValue
       };
     }
 
     // SPL Token balance
-    const tokenMint = new PublicKey(token.address);
-    const tokenAccounts = await connection.getTokenAccountsByOwner(publicKey, {
-      mint: tokenMint
-    });
+    try {
+      const tokenMint = new PublicKey(token.address);
+      
+      // Get the associated token account
+      const associatedTokenAccount = await getAssociatedTokenAddress(
+        tokenMint,
+        publicKey,
+        false // allowOwnerOffCurve
+      );
 
-    if (tokenAccounts.value.length === 0) {
+      console.log('Checking token account:', associatedTokenAccount.toString());
+
+      // Check if the account exists and get balance
+      try {
+        const accountInfo = await getAccount(connection, associatedTokenAccount);
+        const balance = Number(accountInfo.amount) / Math.pow(10, token.decimals);
+        
+        console.log(`${token.symbol} balance:`, balance);
+
+        // Get real-time token price
+        let usdValue = 0;
+        try {
+          const priceData = await priceService.getTokenPrice(token.address, 'solana');
+          usdValue = priceData ? balance * priceData.price : 0;
+        } catch (priceError) {
+          console.warn(`Failed to fetch ${token.symbol} price:`, priceError);
+        }
+
+        return {
+          balance: balance.toString(),
+          usdValue
+        };
+      } catch (accountError) {
+        console.log(`No ${token.symbol} token account found for user`);
+        return { balance: '0', usdValue: 0 };
+      }
+    } catch (tokenError) {
+      console.error(`Error fetching ${token.symbol} balance:`, tokenError);
       return { balance: '0', usdValue: 0 };
     }
-
-    const tokenAccount = tokenAccounts.value[0];
-    const tokenBalance = await connection.getTokenAccountBalance(tokenAccount.pubkey);
-
-    const balance = tokenBalance.value.uiAmount || 0;
-
-    // Get real-time token price from DexScreener
-    const priceData = await priceService.getTokenPrice(token.address, 'solana');
-    const usdValue = priceData ? balance * priceData.price : 0;
-
-    return {
-      balance: balance.toFixed(6),
-      usdValue
-    };
   } catch (error) {
     console.error('Error fetching Solana balance:', error);
     return { balance: '0', usdValue: 0 };
@@ -120,6 +153,12 @@ const fetchTokenBalance = async (
   chainType: ChainType,
   connection?: Connection
 ): Promise<{ balance: string; usdValue?: number }> => {
+  console.log(`Fetching balance for ${token.symbol} on ${chainType}`, {
+    token: token.address,
+    userAddress,
+    chainType
+  });
+
   if (chainType === 'solana' && connection) {
     return fetchSolanaBalance(token, userAddress, connection);
   } else if (chainType === 'evm') {
@@ -144,19 +183,48 @@ export const useTokenBalance = ({ token, chainType, enabled = true }: UseTokenBa
     ? (!!token && !!userAddress && evmConnected)
     : (!!token && !!userAddress && solanaConnected && !!connection);
 
-  // Change the refetchInterval from 30000 to 10000 for faster price updates
-  const { data, isLoading, error } = useQuery({
+  console.log('Balance fetch conditions:', {
+    token: token?.symbol,
+    userAddress,
+    chainType,
+    hasRequiredData,
+    enabled,
+    connected: chainType === 'evm' ? evmConnected : solanaConnected
+  });
+
+  // Change the refetchInterval from 30000 to 10000 for faster updates
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['tokenBalance', token?.address, userAddress, chainType],
-    queryFn: () => fetchTokenBalance(token!, userAddress!, chainType, connection),
+    queryFn: () => {
+      console.log('Query function called for balance fetch');
+      return fetchTokenBalance(token!, userAddress!, chainType, connection);
+    },
     enabled: enabled && hasRequiredData,
-    refetchInterval: 10000, // Changed from 30000 to 10000 (10 seconds)
-    staleTime: 5000, // Changed from 10000 to 5000 (5 seconds)
+    refetchInterval: 10000, // 10 seconds
+    staleTime: 5000, // 5 seconds
     retry: 2,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+  });
+
+  // Manual refetch when conditions change
+  useEffect(() => {
+    if (hasRequiredData && enabled) {
+      console.log('Conditions changed, refetching balance...');
+      refetch();
+    }
+  }, [hasRequiredData, enabled, userAddress, token?.address, refetch]);
+
+  console.log('Balance query result:', {
+    balance: data?.balance,
+    isLoading,
+    error: error?.message,
+    token: token?.symbol
   });
 
   return {
     token: token!,
-    balance: data?.balance || '0.0',
+    balance: data?.balance || '0',
     usdValue: data?.usdValue,
     isLoading: isLoading && enabled,
     error: error?.message,
@@ -182,7 +250,9 @@ export const useTokenBalances = (tokens: Token[], chainType: ChainType, hideZero
     queryFn: async () => {
       if (!userAddress) return [];
 
-      const balances = await Promise.all(
+      console.log(`Fetching balances for ${tokens.length} tokens`);
+
+      const balances = await Promise.allSettled(
         tokens.map(async (token) => {
           const result = await fetchTokenBalance(token, userAddress, chainType, connection);
           return {
@@ -192,15 +262,19 @@ export const useTokenBalances = (tokens: Token[], chainType: ChainType, hideZero
         })
       );
 
+      const successfulBalances = balances
+        .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
+        .map(result => result.value);
+
       // Filter out zero balances if requested
       if (hideZeroBalances) {
-        return balances.filter(balance => {
+        return successfulBalances.filter(balance => {
           const balanceNum = parseFloat(balance.balance);
           return balanceNum > 0;
         });
       }
 
-      return balances;
+      return successfulBalances;
     },
     enabled: hasRequiredData && tokens.length > 0,
     refetchInterval: 30000, // Refetch every 30 seconds
@@ -225,22 +299,23 @@ export const getTokenAccountInfo = async (
     const walletPublicKey = new PublicKey(walletAddress);
     const tokenMint = new PublicKey(tokenMintAddress);
 
-    const tokenAccounts = await connection.getTokenAccountsByOwner(walletPublicKey, {
-      mint: tokenMint
-    });
+    const associatedTokenAccount = await getAssociatedTokenAddress(
+      tokenMint,
+      walletPublicKey,
+      false
+    );
 
-    if (tokenAccounts.value.length === 0) {
+    try {
+      const accountInfo = await getAccount(connection, associatedTokenAccount);
+      return {
+        address: associatedTokenAccount.toString(),
+        balance: Number(accountInfo.amount),
+        decimals: accountInfo.mint,
+      };
+    } catch (error) {
+      console.log('Token account does not exist:', error);
       return null;
     }
-
-    const tokenAccount = tokenAccounts.value[0];
-    const tokenBalance = await connection.getTokenAccountBalance(tokenAccount.pubkey);
-
-    return {
-      address: tokenAccount.pubkey.toString(),
-      balance: tokenBalance.value.uiAmount || 0,
-      decimals: tokenBalance.value.decimals,
-    };
   } catch (error) {
     console.error('Error getting token account info:', error);
     return null;

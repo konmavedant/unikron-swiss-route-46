@@ -1,9 +1,11 @@
+// src/components/swap/SwapFlow.tsx (Updated)
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SwapForm } from "./SwapForm";
 import { SwapPreview } from "./SwapPreview";
 import { SwapStatus } from "./SwapStatus";
 import { SwapCommitReveal } from "./SwapCommitReveal";
+import { SwapExecution } from "./SwapExecution";
 import { Token } from "@/types/tokens";
 import { ChainType } from "@/types/chains";
 import { useSwapStore } from "@/store/swap";
@@ -16,7 +18,7 @@ interface SwapFlowProps {
   isConnected: boolean;
 }
 
-type SwapStep = "form" | "preview" | "commit-reveal" | "status";
+type SwapStep = "form" | "preview" | "commit-reveal" | "execution" | "status";
 
 export const SwapFlow = ({ chainType, tokens, isConnected }: SwapFlowProps) => {
   const [currentStep, setCurrentStep] = useState<SwapStep>("form");
@@ -26,6 +28,7 @@ export const SwapFlow = ({ chainType, tokens, isConnected }: SwapFlowProps) => {
     setChainType, 
     quote, 
     activeIntentId,
+    config,
     resetSwap 
   } = useSwapStore();
   
@@ -45,10 +48,20 @@ export const SwapFlow = ({ chainType, tokens, isConnected }: SwapFlowProps) => {
   };
 
   const handleSwapConfirmed = () => {
-    setCurrentStep("commit-reveal");
+    // For Solana, go directly to execution
+    // For EVM, use commit-reveal if MEV protection is enabled
+    if (chainType === 'solana') {
+      setCurrentStep("execution");
+    } else if (config.mevProtection) {
+      setCurrentStep("commit-reveal");
+    } else {
+      setCurrentStep("execution");
+    }
   };
 
-  const handleSwapComplete = (intentId: string) => {
+  const handleSwapComplete = (signature: string) => {
+    // Store the transaction signature as intent ID for tracking
+    useSwapStore.getState().setActiveIntentId(signature);
     setCurrentStep("status");
   };
 
@@ -64,8 +77,16 @@ export const SwapFlow = ({ chainType, tokens, isConnected }: SwapFlowProps) => {
   return (
     <Card className="w-full max-w-lg mx-auto">
       <CardHeader>
-        <CardTitle className="text-center">
-          Swap Tokens - {chainType.toUpperCase()}
+        <CardTitle className="text-center flex items-center justify-center gap-2">
+          <span>Swap Tokens</span>
+          <span className="text-sm font-normal text-muted-foreground">
+            • {chainType.toUpperCase()}
+          </span>
+          {chainType === 'solana' && (
+            <span className="text-xs bg-gradient-shield text-transparent bg-clip-text font-medium">
+              Unikron
+            </span>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -83,19 +104,28 @@ export const SwapFlow = ({ chainType, tokens, isConnected }: SwapFlowProps) => {
             inputToken={quote.inputToken}
             outputToken={quote.outputToken}
             inputAmount={quote.inputAmount}
-            config={{ slippage: quote.slippage, deadline: 20, mevProtection: true }}
+            config={config}
             onConfirm={handleSwapConfirmed}
             onCancel={() => setCurrentStep("form")}
-            mevProtection={true}
+            mevProtection={config.mevProtection}
           />
         )}
         
-        {currentStep === "commit-reveal" && quote && userAddress && (
+        {currentStep === "commit-reveal" && quote && userAddress && chainType === 'evm' && (
           <SwapCommitReveal
             quote={quote}
             chainType={chainType}
             userAddress={userAddress}
             onSwapComplete={handleSwapComplete}
+            onCancel={handleCancel}
+          />
+        )}
+        
+        {currentStep === "execution" && quote && (
+          <SwapExecution
+            quote={quote}
+            chainType={chainType}
+            onComplete={handleSwapComplete}
             onCancel={handleCancel}
           />
         )}

@@ -1,8 +1,11 @@
+// src/components/swap/TokenBalanceDisplay.tsx (Fixed)
 import { Token, ChainType } from '@/types';
 import { useTokenBalance } from '@/hooks/useTokenBalance';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { Wallet } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Wallet, RefreshCw } from 'lucide-react';
+import { useCallback } from 'react';
 
 interface TokenBalanceDisplayProps {
   token: Token | null;
@@ -10,6 +13,7 @@ interface TokenBalanceDisplayProps {
   isConnected: boolean;
   showUsdValue?: boolean;
   className?: string;
+  showRefresh?: boolean;
 }
 
 export const TokenBalanceDisplay = ({
@@ -17,13 +21,19 @@ export const TokenBalanceDisplay = ({
   chainType,
   isConnected,
   showUsdValue = true,
-  className = ""
+  className = "",
+  showRefresh = false
 }: TokenBalanceDisplayProps) => {
   const { balance, usdValue, isLoading, error } = useTokenBalance({
     token,
     chainType,
     enabled: isConnected && !!token,
   });
+
+  const handleRefresh = useCallback(() => {
+    // Force a refresh by invalidating the query
+    window.location.reload();
+  }, []);
 
   if (!isConnected) {
     return (
@@ -47,6 +57,16 @@ export const TokenBalanceDisplay = ({
     return (
       <div className={`flex items-center gap-2 text-destructive ${className}`}>
         <span className="text-sm">Error loading balance</span>
+        {showRefresh && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            className="h-6 w-6 p-0"
+          >
+            <RefreshCw className="w-3 h-3" />
+          </Button>
+        )}
       </div>
     );
   }
@@ -61,7 +81,6 @@ export const TokenBalanceDisplay = ({
   }
 
   // Format balance with appropriate decimal places
-  // Replace the formatBalance function with this improved version:
   const formatBalance = (bal: string) => {
     const num = parseFloat(bal);
     if (num === 0 || isNaN(num)) return '0';
@@ -78,6 +97,13 @@ export const TokenBalanceDisplay = ({
     }
 
     // For larger amounts, show fewer decimals
+    if (num >= 1000) {
+      return num.toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+        minimumFractionDigits: 0,
+      });
+    }
+
     return num.toLocaleString(undefined, {
       maximumFractionDigits: 4,
       minimumFractionDigits: 0,
@@ -107,6 +133,14 @@ export const TokenBalanceDisplay = ({
   const formattedBalance = formatBalance(balance);
   const balanceNum = parseFloat(balance);
 
+  console.log('Rendering balance display:', {
+    token: token.symbol,
+    balance,
+    formattedBalance,
+    usdValue,
+    isLoading
+  });
+
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <div className="flex items-center gap-1">
@@ -118,6 +152,17 @@ export const TokenBalanceDisplay = ({
         <Badge variant="outline" className="text-xs">
           {formatUsdValue(usdValue)}
         </Badge>
+      )}
+      {showRefresh && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleRefresh}
+          className="h-6 w-6 p-0"
+          title="Refresh balance"
+        >
+          <RefreshCw className="w-3 h-3" />
+        </Button>
       )}
     </div>
   );

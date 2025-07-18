@@ -1,3 +1,4 @@
+// src/components/swap/SwapForm.tsx (Updated)
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { TokenSelector } from "./TokenSelector";
 import { SwapQuoteDisplay } from "./SwapQuoteDisplay";
 import { Token, SwapQuote, ChainType } from "@/types";
 import { useSwapQuote } from "@/hooks/useSwapQuote";
+import { useSolanaSwap } from "@/hooks/useSolanaSwap";
 import { useSwapStore } from "@/store/swap";
 import { TokenBalanceDisplay } from "./TokenBalanceDisplay";
 import { useErrorHandler } from "@/hooks/useErrorHandler";
@@ -47,6 +49,8 @@ export const SwapForm = ({
     setOutputToken,
     setInputAmount,
     setConfig,
+    setQuote,
+    setLoadingQuote,
     swapTokens: swapTokenPositions,
   } = useSwapStore();
 
@@ -54,6 +58,13 @@ export const SwapForm = ({
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const { publicKey: solanaAddress, connected: solanaConnected } = useWallet();
   const { address: storeAddress, chainType: storeChainType } = useWalletStore();
+
+  // Solana-specific swap functionality
+  const { 
+    getQuote: getSolanaQuote, 
+    executeSwap: executeSolanaSwap,
+    isLoading: isSolanaLoading 
+  } = useSolanaSwap();
 
   // Determine if wallet is connected for current chain
   const isWalletConnected = useMemo(() => {
@@ -74,7 +85,6 @@ export const SwapForm = ({
     return null;
   }, [chainType, evmAddress, solanaAddress]);
 
-  const { hasValidInputs } = useSwapQuote();
   const { handleError } = useErrorHandler();
 
   // Update MEV protection in config
@@ -82,16 +92,87 @@ export const SwapForm = ({
     setConfig({ mevProtection });
   }, [mevProtection, setConfig]);
 
+  // Custom quote fetching for Solana using Jupiter
+  useEffect(() => {
+    const fetchQuote = async () => {
+      if (!inputToken || !outputToken || !inputAmount || parseFloat(inputAmount) === 0) {
+        setQuote(null);
+        return;
+      }
+
+      if (chainType === 'solana') {
+        setLoadingQuote(true);
+        try {
+          const solanaQuote = await getSolanaQuote(
+            inputToken,
+            outputToken,
+            inputAmount,
+            config.slippage
+          );
+          setQuote(solanaQuote);
+        } catch (error) {
+          handleError(error);
+          setQuote(null);
+        } finally {
+          setLoadingQuote(false);
+        }
+      }
+      // For EVM chains, use the existing useSwapQuote hook
+    };
+
+    // Debounce the quote fetching
+    const timeoutId = setTimeout(fetchQuote, 500);
+    return () => clearTimeout(timeoutId);
+  }, [
+    chainType,
+    inputToken,
+    outputToken,
+    inputAmount,
+    config.slippage,
+    getSolanaQuote,
+    setQuote,
+    setLoadingQuote,
+    handleError
+  ]);
+
   const handlePreview = () => {
     if (hasValidInputs && quote) {
       onPreview();
     }
   };
 
+  const handleDirectSwap = async () => {
+    if (!quote || chainType !== 'solana') return;
+
+    try {
+      setLoadingQuote(true);
+      const signature = await executeSolanaSwap(quote);
+      
+      if (signature) {
+        // Handle successful swap
+        console.log('Swap successful:', signature);
+        // Reset form or show success message
+        setInputAmount('');
+        setQuote(null);
+      }
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setLoadingQuote(false);
+    }
+  };
+
+  // Check if we have valid inputs for quoting
+  const hasValidInputs = useMemo(() => {
+    return !!(inputToken && outputToken && inputAmount && parseFloat(inputAmount) > 0);
+  }, [inputToken, outputToken, inputAmount]);
+
   // Check if we can show the swap button
   const canShowSwapButton = useMemo(() => {
-    return isWalletConnected && inputToken && outputToken && inputAmount && !isLoadingQuote;
-  }, [isWalletConnected, inputToken, outputToken, inputAmount, isLoadingQuote]);
+    return isWalletConnected && hasValidInputs && !isLoadingQuote && !isSolanaLoading;
+  }, [isWalletConnected, hasValidInputs, isLoadingQuote, isSolanaLoading]);
+
+  const isLoading = isLoadingQuote || isSolanaLoading;
 
   return (
     <Card className="w-full max-w-md mx-auto shadow-card">
@@ -162,6 +243,11 @@ export const SwapForm = ({
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-shield-cyan" />
             <span className="text-sm font-medium">MEV Protection</span>
+            {chainType === 'solana' && (
+              <Badge variant="outline" className="text-xs">
+                Unikron
+              </Badge>
+            )}
           </div>
           <Switch
             checked={mevProtection}
@@ -232,7 +318,7 @@ export const SwapForm = ({
               <Input
                 type="number"
                 placeholder="0.0"
-                value={outputAmount}
+                value={quote?.outputAmount ? (parseFloat(quote.outputAmount) / Math.pow(10, quote.outputToken.decimals)).toFixed(6) : ''}
                 className="text-lg h-12"
                 readOnly
                 disabled={!isWalletConnected}
@@ -251,7 +337,7 @@ export const SwapForm = ({
         {/* Quote Display */}
         <SwapQuoteDisplay
           quote={quote}
-          isLoading={isLoadingQuote}
+          isLoading={isLoading}
           mevProtection={mevProtection}
         />
 
@@ -260,40 +346,82 @@ export const SwapForm = ({
           <div className="p-3 rounded-lg bg-shield-cyan/5 border border-shield-cyan/20">
             <div className="flex items-center gap-2 mb-2">
               <Shield className="w-4 h-4 text-shield-cyan" />
-              <span className="text-sm font-medium text-shield-cyan">MEV Protection Active</span>
+              <span className="text-sm font-medium text-shield-cyan">
+                {chainType === 'solana' ? 'Jupiter Protection' : 'MEV Protection Active'}
+              </span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Your swap will use commit-reveal protocol to prevent front-running and MEV attacks.
+              {chainType === 'solana' 
+                ? 'Your swap will use Jupiter aggregator for best execution and protection.'
+                : 'Your swap will use commit-reveal protocol to prevent front-running and MEV attacks.'
+              }
             </p>
           </div>
         )}
 
-        <Button
-          variant={mevProtection ? "default" : "secondary"}
-          className="w-full h-12 text-base font-semibold"
-          disabled={!canShowSwapButton}
-          onClick={handlePreview}
-        >
-          {!isWalletConnected ? (
-            "Connect Wallet"
-          ) : !inputToken || !outputToken ? (
-            "Select Tokens"
-          ) : !inputAmount ? (
-            "Enter Amount"
-          ) : isLoadingQuote ? (
-            "Getting Quote..."
-          ) : mevProtection ? (
-            <>
-              <Shield className="w-4 h-4" />
-              Preview Protected Swap
-            </>
+        {/* Action Buttons */}
+        <div className="space-y-2">
+          {chainType === 'solana' && quote ? (
+            // Direct swap for Solana using Jupiter
+            <Button
+              variant="cosmic"
+              className="w-full h-12 text-base font-semibold"
+              disabled={!canShowSwapButton}
+              onClick={handleDirectSwap}
+            >
+              {!isWalletConnected ? (
+                "Connect Wallet"
+              ) : !inputToken || !outputToken ? (
+                "Select Tokens"
+              ) : !inputAmount ? (
+                "Enter Amount"
+              ) : isLoading ? (
+                "Getting Quote..."
+              ) : (
+                <>
+                  <Zap className="w-4 h-4" />
+                  Swap
+                </>
+              )}
+            </Button>
           ) : (
-            <>
-              <Zap className="w-4 h-4" />
-              Preview Swap
-            </>
+            // Preview for EVM or when no quote
+            <Button
+              variant={mevProtection ? "default" : "secondary"}
+              className="w-full h-12 text-base font-semibold"
+              disabled={!canShowSwapButton || !quote}
+              onClick={handlePreview}
+            >
+              {!isWalletConnected ? (
+                "Connect Wallet"
+              ) : !inputToken || !outputToken ? (
+                "Select Tokens"
+              ) : !inputAmount ? (
+                "Enter Amount"
+              ) : isLoading ? (
+                "Getting Quote..."
+              ) : mevProtection ? (
+                <>
+                  <Shield className="w-4 h-4" />
+                  Preview Protected Swap
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4" />
+                  Preview Swap
+                </>
+              )}
+            </Button>
           )}
-        </Button>
+
+          {/* Chain-specific info */}
+          <div className="text-center">
+            <Badge variant="outline" className="text-xs">
+              {chainType === 'evm' ? 'EVM Compatible' : 'Solana Network'} • 
+              {chainType === 'solana' ? ' Unikron Powered' : ' MEV Protected'}
+            </Badge>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
