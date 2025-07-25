@@ -173,7 +173,7 @@ router.post('/intent', async (req: any, res: any) => {
 
     const { intent, hash } = await generateIntent(route, tradeMeta);
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx:any) => {
       const user = await tx.user.upsert({
         where: { walletAddress: intent.user },
         update: {},

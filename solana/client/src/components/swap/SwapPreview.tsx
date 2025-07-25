@@ -6,7 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Shield, Clock, ArrowRight, AlertTriangle, Zap, TrendingUp, ExternalLink } from 'lucide-react';
-import { MEVHistogram } from './MEVHistogram';
+import { MEVHistogram } from '../MEVHistogram';
 
 interface SwapPreviewProps {
   quote: {
@@ -30,7 +30,7 @@ interface SwapPreviewProps {
   isCommitting?: boolean;
 }
 
-export const EnhancedSwapPreview: React.FC<SwapPreviewProps> = ({
+export const SwapPreview: React.FC<SwapPreviewProps> = ({
   quote,
   config,
   onConfirm,

@@ -22,14 +22,14 @@ export const SolanaWalletProvider = ({ children }: SolanaWalletProviderProps) =>
     // - Alchemy: https://solana-devnet.g.alchemy.com/v2/YOUR_API_KEY
     
     return import.meta.env.VITE_SOLANA_RPC_URL || clusterApiUrl(network);
-  }, [network]);
+  }, []);
 
   const wallets = useMemo(
     () => [
       new PhantomWalletAdapter(),
       new SolflareWalletAdapter({ network }),
     ],
-    [network]
+    []
   );
 
   return (

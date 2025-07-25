@@ -36,6 +36,7 @@ export const TokenSelector = ({
   showPrice = true,
   placeholder = "Search by name or symbol"
 }: TokenSelectorProps) => {
+  
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("popular");

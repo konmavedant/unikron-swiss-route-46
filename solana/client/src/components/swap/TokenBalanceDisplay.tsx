@@ -30,6 +30,10 @@ export const TokenBalanceDisplay = ({
     enabled: isConnected && !!token,
   });
 
+  console.log('====================================');
+  console.log(balance,"balance");
+  console.log('====================================');
+
   const handleRefresh = useCallback(() => {
     // Force a refresh by invalidating the query
     window.location.reload();

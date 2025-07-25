@@ -1,5 +1,5 @@
-// src/hooks/useTokenBalance.ts (Fixed)
-import { useState, useEffect } from 'react';
+// src/hooks/useTokenBalance.ts (Fixed - No Repeated Calls)
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Token, ChainType } from '@/types';
 import { useAccount } from 'wagmi';
@@ -22,12 +22,31 @@ interface UseTokenBalanceProps {
   enabled?: boolean;
 }
 
-// Fixed Solana balance fetching
+// Cache to prevent duplicate calls
+const balanceCache = new Map();
+const lastFetchTime = new Map();
+const CACHE_DURATION = 30000; // 30 seconds
+
+// Fixed Solana balance fetching with caching
 const fetchSolanaBalance = async (
   token: Token,
   userAddress: string,
   connection: Connection
 ): Promise<{ balance: string; usdValue?: number }> => {
+  const cacheKey = `${token.address}-${userAddress}-solana`;
+  const now = Date.now();
+  
+  // Check cache first
+  const lastFetch = lastFetchTime.get(cacheKey);
+  const cachedData = balanceCache.get(cacheKey);
+  
+  if (lastFetch && cachedData && (now - lastFetch) < CACHE_DURATION) {
+    console.log('Returning cached balance for', token.symbol);
+    return cachedData;
+  }
+
+  console.log('Fetching fresh balance for', token.symbol);
+
   try {
     const publicKey = new PublicKey(userAddress);
 
@@ -36,12 +55,8 @@ const fetchSolanaBalance = async (
         token.address === 'So11111111111111111111111111111111111111112' ||
         token.address === '11111111111111111111111111111111') {
       
-      console.log('Fetching SOL balance for:', userAddress);
       const balance = await connection.getBalance(publicKey);
       const balanceInSol = balance / LAMPORTS_PER_SOL;
-      
-      console.log('SOL Balance (lamports):', balance);
-      console.log('SOL Balance (SOL):', balanceInSol);
 
       // Get real-time SOL price
       let usdValue = 0;
@@ -50,37 +65,35 @@ const fetchSolanaBalance = async (
         usdValue = priceData ? balanceInSol * priceData.price : 0;
       } catch (priceError) {
         console.warn('Failed to fetch SOL price:', priceError);
-        // Use fallback price
         usdValue = balanceInSol * 100; // Approximate SOL price
       }
 
-      return {
-        balance: balanceInSol.toString(),
+      const result = {
+        balance: balanceInSol.toFixed(6),
         usdValue
       };
+
+      // Cache the result
+      balanceCache.set(cacheKey, result);
+      lastFetchTime.set(cacheKey, now);
+
+      return result;
     }
 
     // SPL Token balance
     try {
       const tokenMint = new PublicKey(token.address);
       
-      // Get the associated token account
       const associatedTokenAccount = await getAssociatedTokenAddress(
         tokenMint,
         publicKey,
-        false // allowOwnerOffCurve
+        false
       );
 
-      console.log('Checking token account:', associatedTokenAccount.toString());
-
-      // Check if the account exists and get balance
       try {
         const accountInfo = await getAccount(connection, associatedTokenAccount);
         const balance = Number(accountInfo.amount) / Math.pow(10, token.decimals);
-        
-        console.log(`${token.symbol} balance:`, balance);
 
-        // Get real-time token price
         let usdValue = 0;
         try {
           const priceData = await priceService.getTokenPrice(token.address, 'solana');
@@ -89,34 +102,60 @@ const fetchSolanaBalance = async (
           console.warn(`Failed to fetch ${token.symbol} price:`, priceError);
         }
 
-        return {
-          balance: balance.toString(),
+        const result = {
+          balance: balance.toFixed(token.decimals > 6 ? 6 : token.decimals),
           usdValue
         };
+
+        // Cache the result
+        balanceCache.set(cacheKey, result);
+        lastFetchTime.set(cacheKey, now);
+
+        return result;
       } catch (accountError) {
-        console.log(`No ${token.symbol} token account found for user`);
-        return { balance: '0', usdValue: 0 };
+        const result = { balance: '0', usdValue: 0 };
+        balanceCache.set(cacheKey, result);
+        lastFetchTime.set(cacheKey, now);
+        return result;
       }
     } catch (tokenError) {
       console.error(`Error fetching ${token.symbol} balance:`, tokenError);
-      return { balance: '0', usdValue: 0 };
+      const result = { balance: '0', usdValue: 0 };
+      balanceCache.set(cacheKey, result);
+      lastFetchTime.set(cacheKey, now);
+      return result;
     }
   } catch (error) {
     console.error('Error fetching Solana balance:', error);
-    return { balance: '0', usdValue: 0 };
+    const result = { balance: '0', usdValue: 0 };
+    balanceCache.set(cacheKey, result);
+    lastFetchTime.set(cacheKey, now);
+    return result;
   }
 };
 
-// Mock EVM balance fetching with real prices
+// Mock EVM balance fetching with caching
 const fetchEVMBalance = async (
   token: Token,
   userAddress: string,
   chainType: ChainType
 ): Promise<{ balance: string; usdValue?: number }> => {
-  // This would be replaced with actual RPC calls to get real EVM balances
+  const cacheKey = `${token.address}-${userAddress}-evm`;
+  const now = Date.now();
+  
+  // Check cache first
+  const lastFetch = lastFetchTime.get(cacheKey);
+  const cachedData = balanceCache.get(cacheKey);
+  
+  if (lastFetch && cachedData && (now - lastFetch) < CACHE_DURATION) {
+    console.log('Returning cached EVM balance for', token.symbol);
+    return cachedData;
+  }
+
+  console.log('Fetching fresh EVM balance for', token.symbol);
+
   await new Promise(resolve => setTimeout(resolve, 500));
 
-  // Mock data for EVM - replace with real implementation
   const mockBalances: Record<string, string> = {
     'ETH': '2.5',
     'USDC': '1250.00',
@@ -126,14 +165,12 @@ const fetchEVMBalance = async (
 
   const balance = mockBalances[token.symbol] || '0.0';
 
-  // Get real-time prices from DexScreener for EVM tokens
   let usdValue = 0;
   try {
     const priceData = await priceService.getTokenPrice(token.address, 'evm');
     usdValue = priceData ? parseFloat(balance) * priceData.price : 0;
   } catch (error) {
     console.error('Error fetching EVM token price:', error);
-    // Fallback to mock prices only if price service fails
     const fallbackPrices: Record<string, number> = {
       'ETH': 3000,
       'USDC': 1,
@@ -143,7 +180,13 @@ const fetchEVMBalance = async (
     usdValue = parseFloat(balance) * (fallbackPrices[token.symbol] || 1);
   }
 
-  return { balance, usdValue };
+  const result = { balance, usdValue };
+  
+  // Cache the result
+  balanceCache.set(cacheKey, result);
+  lastFetchTime.set(cacheKey, now);
+
+  return result;
 };
 
 // Main balance fetching function
@@ -153,12 +196,6 @@ const fetchTokenBalance = async (
   chainType: ChainType,
   connection?: Connection
 ): Promise<{ balance: string; usdValue?: number }> => {
-  console.log(`Fetching balance for ${token.symbol} on ${chainType}`, {
-    token: token.address,
-    userAddress,
-    chainType
-  });
-
   if (chainType === 'solana' && connection) {
     return fetchSolanaBalance(token, userAddress, connection);
   } else if (chainType === 'evm') {
@@ -172,54 +209,60 @@ export const useTokenBalance = ({ token, chainType, enabled = true }: UseTokenBa
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const { publicKey: solanaAddress, connected: solanaConnected } = useWallet();
   const { connection } = useConnection();
+  const lastQueryRef = useRef<string>('');
 
-  // Get the appropriate address based on chain type
-  const userAddress = chainType === 'evm'
-    ? (evmConnected ? evmAddress : null)
-    : (solanaConnected ? solanaAddress?.toBase58() : null);
-
-  // Check if we have all required data
-  const hasRequiredData = chainType === 'evm'
-    ? (!!token && !!userAddress && evmConnected)
-    : (!!token && !!userAddress && solanaConnected && !!connection);
-
-  console.log('Balance fetch conditions:', {
-    token: token?.symbol,
-    userAddress,
-    chainType,
-    hasRequiredData,
-    enabled,
-    connected: chainType === 'evm' ? evmConnected : solanaConnected
-  });
-
-  // Change the refetchInterval from 30000 to 10000 for faster updates
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['tokenBalance', token?.address, userAddress, chainType],
-    queryFn: () => {
-      console.log('Query function called for balance fetch');
-      return fetchTokenBalance(token!, userAddress!, chainType, connection);
-    },
-    enabled: enabled && hasRequiredData,
-    refetchInterval: 10000, // 10 seconds
-    staleTime: 5000, // 5 seconds
-    retry: 2,
-    refetchOnWindowFocus: true,
-    refetchOnMount: true,
-  });
-
-  // Manual refetch when conditions change
-  useEffect(() => {
-    if (hasRequiredData && enabled) {
-      console.log('Conditions changed, refetching balance...');
-      refetch();
+  // Get user address based on chain type
+  const userAddress = useMemo(() => {
+    if (chainType === 'evm') {
+      return evmConnected ? evmAddress : null;
+    } else {
+      return solanaConnected ? solanaAddress?.toBase58() : null;
     }
-  }, [hasRequiredData, enabled, userAddress, token?.address, refetch]);
+  }, [chainType, evmConnected, evmAddress, solanaConnected, solanaAddress]);
 
-  console.log('Balance query result:', {
-    balance: data?.balance,
-    isLoading,
-    error: error?.message,
-    token: token?.symbol
+  // Check if we have required data
+  const hasRequiredData = useMemo(() => {
+    if (!token || !userAddress) return false;
+    
+    if (chainType === 'evm') {
+      return evmConnected;
+    } else {
+      return solanaConnected && !!connection;
+    }
+  }, [token, userAddress, chainType, evmConnected, solanaConnected, connection]);
+
+  // Create stable query key
+  const queryKey = useMemo(() => {
+    if (!token || !userAddress) return ['tokenBalance', 'disabled'];
+    return ['tokenBalance', token.address, userAddress, chainType];
+  }, [token?.address, userAddress, chainType]);
+
+  // Track if query key changed to prevent duplicate calls
+  const currentQueryKey = JSON.stringify(queryKey);
+  const shouldFetch = currentQueryKey !== lastQueryRef.current && hasRequiredData && enabled;
+  
+  if (shouldFetch) {
+    lastQueryRef.current = currentQueryKey;
+  }
+
+  const { data, isLoading, error } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      if (!token || !userAddress) {
+        throw new Error('Missing required parameters');
+      }
+      
+      console.log(`Fetching balance for ${token.symbol} - ${userAddress.slice(0, 8)}...`);
+      return fetchTokenBalance(token, userAddress, chainType, connection);
+    },
+    enabled: hasRequiredData && enabled,
+    staleTime: CACHE_DURATION, // 30 seconds
+    gcTime: CACHE_DURATION * 2, // 60 seconds
+    refetchInterval: false, // Disable automatic refetching
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    retry: false, // Disable retries to prevent repeated calls
   });
 
   return {
@@ -231,55 +274,85 @@ export const useTokenBalance = ({ token, chainType, enabled = true }: UseTokenBa
   };
 };
 
-// Hook for multiple token balances with filtering
+// Simplified hook for multiple token balances
 export const useTokenBalances = (tokens: Token[], chainType: ChainType, hideZeroBalances: boolean = true) => {
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const { publicKey: solanaAddress, connected: solanaConnected } = useWallet();
   const { connection } = useConnection();
 
-  const userAddress = chainType === 'evm'
-    ? (evmConnected ? evmAddress : null)
-    : (solanaConnected ? solanaAddress?.toBase58() : null);
+  const userAddress = useMemo(() => {
+    if (chainType === 'evm') {
+      return evmConnected ? evmAddress : null;
+    } else {
+      return solanaConnected ? solanaAddress?.toBase58() : null;
+    }
+  }, [chainType, evmConnected, evmAddress, solanaConnected, solanaAddress]);
 
-  const hasRequiredData = chainType === 'evm'
-    ? (!!userAddress && evmConnected)
-    : (!!userAddress && solanaConnected && !!connection);
+  const hasRequiredData = useMemo(() => {
+    if (!userAddress || tokens.length === 0) return false;
+    
+    if (chainType === 'evm') {
+      return evmConnected;
+    } else {
+      return solanaConnected && !!connection;
+    }
+  }, [userAddress, tokens.length, chainType, evmConnected, solanaConnected, connection]);
+
+  const queryKey = useMemo(() => {
+    if (!userAddress) return ['tokenBalances', 'disabled'];
+    return [
+      'tokenBalances',
+      tokens.map(t => t.address).sort().join(','),
+      userAddress,
+      chainType,
+      hideZeroBalances
+    ];
+  }, [tokens, userAddress, chainType, hideZeroBalances]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['tokenBalances', tokens.map(t => t.address), userAddress, chainType, hideZeroBalances],
+    queryKey,
     queryFn: async () => {
       if (!userAddress) return [];
 
       console.log(`Fetching balances for ${tokens.length} tokens`);
 
-      const balances = await Promise.allSettled(
-        tokens.map(async (token) => {
+      // Process tokens sequentially to avoid overwhelming the RPC
+      const results = [];
+      for (const token of tokens) {
+        try {
           const result = await fetchTokenBalance(token, userAddress, chainType, connection);
-          return {
+          results.push({
             token,
             ...result,
-          };
-        })
-      );
-
-      const successfulBalances = balances
-        .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
-        .map(result => result.value);
-
-      // Filter out zero balances if requested
-      if (hideZeroBalances) {
-        return successfulBalances.filter(balance => {
-          const balanceNum = parseFloat(balance.balance);
-          return balanceNum > 0;
-        });
+          });
+        } catch (error) {
+          console.error(`Error fetching balance for ${token.symbol}:`, error);
+          results.push({
+            token,
+            balance: '0',
+            usdValue: 0,
+          });
+        }
+        
+        // Small delay between requests to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      return successfulBalances;
+      // Filter zero balances if requested
+      if (hideZeroBalances) {
+        return results.filter(balance => parseFloat(balance.balance) > 0.000001);
+      }
+
+      return results;
     },
-    enabled: hasRequiredData && tokens.length > 0,
-    refetchInterval: 30000, // Refetch every 30 seconds
-    staleTime: 10000,
-    retry: 2,
+    enabled: hasRequiredData,
+    staleTime: CACHE_DURATION,
+    gcTime: CACHE_DURATION * 2,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    retry: false,
   });
 
   return {
@@ -287,6 +360,13 @@ export const useTokenBalances = (tokens: Token[], chainType: ChainType, hideZero
     isLoading,
     error: error?.message,
   };
+};
+
+// Helper function to manually refresh balances (call this when needed)
+export const refreshBalances = () => {
+  balanceCache.clear();
+  lastFetchTime.clear();
+  console.log('Balance cache cleared');
 };
 
 // Helper function to get token account info for SPL tokens
@@ -313,7 +393,7 @@ export const getTokenAccountInfo = async (
         decimals: accountInfo.mint,
       };
     } catch (error) {
-      console.log('Token account does not exist:', error);
+      console.error('Token account does not exist:', error);
       return null;
     }
   } catch (error) {

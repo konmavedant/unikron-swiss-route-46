@@ -1,36 +1,39 @@
-"use client"
-
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
-import { Badge } from "@/components/ui/badge"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Label } from "@/components/ui/label"
-import { ArrowDownUp, Shield, Zap, Settings, AlertTriangle } from "lucide-react"
-import { useState, useEffect, useMemo } from "react"
-import { TokenSelector } from "./TokenSelector"
-import { SwapQuoteDisplay } from "./SwapQuoteDisplay"
-import type { Token } from "@/types"
-import { useSolanaSwap } from "@/hooks/useSolanaSwap"
-import { useSwapStore } from "@/store/swap"
-import { TokenBalanceDisplay } from "./TokenBalanceDisplay"
-import { useErrorHandler } from "@/hooks/useErrorHandler"
-import { useWalletStore } from "@/store/wallet"
-import { useAccount } from "wagmi"
-import { useWallet } from "@solana/wallet-adapter-react"
+// src/components/swap/SwapForm.tsx (Updated)
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
+import { ArrowDownUp, Shield, Zap, Settings } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { TokenSelector } from "./TokenSelector";
+import { SwapQuoteDisplay } from "./SwapQuoteDisplay";
+import { Token, SwapQuote, ChainType } from "@/types";
+import { useSwapQuote } from "@/hooks/useSwapQuote";
+import { useSolanaSwap } from "@/hooks/useSolanaSwap";
+import { useSwapStore } from "@/store/swap";
+import { TokenBalanceDisplay } from "./TokenBalanceDisplay";
+import { useErrorHandler } from "@/hooks/useErrorHandler";
+import { useWalletStore } from "@/store/wallet";
+import { useAccount } from 'wagmi';
+import { useWallet } from '@solana/wallet-adapter-react';
 
 interface SwapFormProps {
-  tokens: Token[]
-  isConnected: boolean
-  onPreview: () => void
+  tokens: Token[];
+  isConnected: boolean;
+  onPreview: () => void;
 }
 
-export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
+export const SwapForm = ({
+  tokens,
+  onPreview,
+  isConnected
+}: SwapFormProps) => {
   // Local state for MEV protection and settings
-  const [mevProtection, setMevProtection] = useState(true)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [useContractSwap, setUseContractSwap] = useState(true) // New state for swap method
+  const [mevProtection, setMevProtection] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Global swap state
   const {
@@ -49,68 +52,82 @@ export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
     setQuote,
     setLoadingQuote,
     swapTokens: swapTokenPositions,
-  } = useSwapStore()
+  } = useSwapStore();
+
+
+  console.log('====================================');
+  console.log(outputToken,"output token******************************************************************************************");
+  console.log('====================================');
 
   // Wallet connections
-  const { address: evmAddress, isConnected: evmConnected } = useAccount()
-  const { publicKey: solanaAddress, connected: solanaConnected } = useWallet()
-  const { address: storeAddress, chainType: storeChainType } = useWalletStore()
+  const { address: evmAddress, isConnected: evmConnected } = useAccount();
+  const { publicKey: solanaAddress, connected: solanaConnected } = useWallet();
+  const { address: storeAddress, chainType: storeChainType } = useWalletStore();
 
   // Solana-specific swap functionality
-  const { getQuote: getSolanaQuote, executeSwap: executeSolanaSwap, isLoading: isSolanaLoading } = useSolanaSwap()
+  const { 
+    getQuote: getSolanaQuote, 
+    executeSwap: executeSolanaSwap,
+    isLoading: isSolanaLoading 
+  } = useSolanaSwap();
 
   // Determine if wallet is connected for current chain
   const isWalletConnected = useMemo(() => {
-    if (chainType === "evm") {
-      return evmConnected && !!evmAddress
+    if (chainType === 'evm') {
+      return evmConnected && !!evmAddress;
     } else {
-      return solanaConnected && !!solanaAddress
+      return solanaConnected && !!solanaAddress;
     }
-  }, [chainType, evmConnected, evmAddress, solanaConnected, solanaAddress])
+  }, [chainType, evmConnected, evmAddress, solanaConnected, solanaAddress]);
 
   // Get current wallet address
   const currentWalletAddress = useMemo(() => {
-    if (chainType === "evm" && evmAddress) {
-      return evmAddress
-    } else if (chainType === "solana" && solanaAddress) {
-      return solanaAddress.toString()
+    if (chainType === 'evm' && evmAddress) {
+      return evmAddress;
+    } else if (chainType === 'solana' && solanaAddress) {
+      return solanaAddress.toString();
     }
-    return null
-  }, [chainType, evmAddress, solanaAddress])
+    return null;
+  }, [chainType, evmAddress, solanaAddress]);
 
-  const { handleError } = useErrorHandler()
+  const { handleError } = useErrorHandler();
 
   // Update MEV protection in config
   useEffect(() => {
-    setConfig({ mevProtection })
-  }, [mevProtection, setConfig])
+    setConfig({ mevProtection });
+  }, [mevProtection, setConfig]);
 
   // Custom quote fetching for Solana using Jupiter
   useEffect(() => {
     const fetchQuote = async () => {
-      if (!inputToken || !outputToken || !inputAmount || Number.parseFloat(inputAmount) === 0) {
-        setQuote(null)
-        return
+      if (!inputToken || !outputToken || !inputAmount || parseFloat(inputAmount) === 0) {
+        setQuote(null);
+        return;
       }
 
-      if (chainType === "solana") {
-        setLoadingQuote(true)
+      if (chainType === 'solana') {
+        setLoadingQuote(true);
         try {
-          const solanaQuote = await getSolanaQuote(inputToken, outputToken, inputAmount, config.slippage)
-          setQuote(solanaQuote)
+          const solanaQuote = await getSolanaQuote(
+            inputToken,
+            outputToken,
+            inputAmount,
+            config.slippage
+          );
+          setQuote(solanaQuote);
         } catch (error) {
-          handleError(error)
-          setQuote(null)
+          handleError(error);
+          setQuote(null);
         } finally {
-          setLoadingQuote(false)
+          setLoadingQuote(false);
         }
       }
       // For EVM chains, use the existing useSwapQuote hook
-    }
+    };
 
     // Debounce the quote fetching
-    const timeoutId = setTimeout(fetchQuote, 500)
-    return () => clearTimeout(timeoutId)
+    const timeoutId = setTimeout(fetchQuote, 500);
+    return () => clearTimeout(timeoutId);
   }, [
     chainType,
     inputToken,
@@ -120,49 +137,47 @@ export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
     getSolanaQuote,
     setQuote,
     setLoadingQuote,
-    handleError,
-  ])
+    handleError
+  ]);
 
   const handlePreview = () => {
     if (hasValidInputs && quote) {
-      onPreview()
+      onPreview();
     }
-  }
+  };
 
   const handleDirectSwap = async () => {
-    if (!quote || chainType !== "solana") return
+    if (!quote || chainType !== 'solana') return;
 
     try {
-      setLoadingQuote(true)
-
-      // Execute swap with contract or Jupiter based on user preference
-      const signature = await executeSolanaSwap(quote, useContractSwap)
-
+      setLoadingQuote(true);
+      const signature = await executeSolanaSwap(quote);
+      
       if (signature) {
         // Handle successful swap
-        console.log("Swap successful:", signature)
+        console.log('Swap successful:', signature);
         // Reset form or show success message
-        setInputAmount("")
-        setQuote(null)
+        setInputAmount('');
+        setQuote(null);
       }
     } catch (error) {
-      handleError(error)
+      handleError(error);
     } finally {
-      setLoadingQuote(false)
+      setLoadingQuote(false);
     }
-  }
+  };
 
   // Check if we have valid inputs for quoting
   const hasValidInputs = useMemo(() => {
-    return !!(inputToken && outputToken && inputAmount && Number.parseFloat(inputAmount) > 0)
-  }, [inputToken, outputToken, inputAmount])
+    return !!(inputToken && outputToken && inputAmount && parseFloat(inputAmount) > 0);
+  }, [inputToken, outputToken, inputAmount]);
 
   // Check if we can show the swap button
   const canShowSwapButton = useMemo(() => {
-    return isWalletConnected && hasValidInputs && !isLoadingQuote && !isSolanaLoading
-  }, [isWalletConnected, hasValidInputs, isLoadingQuote, isSolanaLoading])
+    return isWalletConnected && hasValidInputs && !isLoadingQuote && !isSolanaLoading;
+  }, [isWalletConnected, hasValidInputs, isLoadingQuote, isSolanaLoading]);
 
-  const isLoading = isLoadingQuote || isSolanaLoading
+  const isLoading = isLoadingQuote || isSolanaLoading;
 
   return (
     <Card className="w-full max-w-md mx-auto shadow-card">
@@ -209,7 +224,7 @@ export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
                     min="0.1"
                     max="50"
                     value={config.slippage}
-                    onChange={(e) => setConfig({ slippage: Number.parseFloat(e.target.value) || 0.5 })}
+                    onChange={(e) => setConfig({ slippage: parseFloat(e.target.value) || 0.5 })}
                     placeholder="Custom"
                   />
                 </div>
@@ -221,57 +236,29 @@ export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
                     min="1"
                     max="60"
                     value={config.deadline}
-                    onChange={(e) => setConfig({ deadline: Number.parseInt(e.target.value) || 20 })}
+                    onChange={(e) => setConfig({ deadline: parseInt(e.target.value) || 20 })}
                   />
                 </div>
-                {chainType === "solana" && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="contract-swap">Use Contract Swap</Label>
-                      <Switch id="contract-swap" checked={useContractSwap} onCheckedChange={setUseContractSwap} />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {useContractSwap
-                        ? "Uses your deployed contract with MEV protection"
-                        : "Uses Jupiter direct swap (faster but no MEV protection)"}
-                    </p>
-                  </div>
-                )}
               </div>
             </PopoverContent>
           </Popover>
         </div>
 
-        {/* MEV Protection Toggle */}
         <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border/50">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-shield-cyan" />
             <span className="text-sm font-medium">MEV Protection</span>
-            {chainType === "solana" && useContractSwap && (
+            {chainType === 'solana' && (
               <Badge variant="outline" className="text-xs">
-                Contract
-              </Badge>
-            )}
-            {chainType === "solana" && !useContractSwap && (
-              <Badge variant="outline" className="text-xs bg-orange-100 text-orange-800">
-                Jupiter Only
+                Unikron
               </Badge>
             )}
           </div>
           <Switch
-            checked={mevProtection && (chainType !== "solana" || useContractSwap)}
+            checked={mevProtection}
             onCheckedChange={setMevProtection}
-            disabled={chainType === "solana" && !useContractSwap}
           />
         </div>
-
-        {/* Warning for Jupiter-only mode */}
-        {chainType === "solana" && !useContractSwap && (
-          <div className="flex items-center gap-2 p-2 rounded-lg bg-orange-50 border border-orange-200">
-            <AlertTriangle className="w-4 h-4 text-orange-600" />
-            <span className="text-xs text-orange-800">Jupiter-only mode: No MEV protection</span>
-          </div>
-        )}
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -336,11 +323,7 @@ export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
               <Input
                 type="number"
                 placeholder="0.0"
-                value={
-                  quote?.outputAmount
-                    ? (Number.parseFloat(quote.outputAmount) / Math.pow(10, quote.outputToken.decimals)).toFixed(6)
-                    : ""
-                }
+                value={quote?.outputAmount ? (parseFloat(quote.outputAmount) / Math.pow(10, quote.outputToken.decimals)).toFixed(6) : ''}
                 className="text-lg h-12"
                 readOnly
                 disabled={!isWalletConnected}
@@ -360,30 +343,31 @@ export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
         <SwapQuoteDisplay
           quote={quote}
           isLoading={isLoading}
-          mevProtection={mevProtection && (chainType !== "solana" || useContractSwap)}
+          mevProtection={mevProtection}
         />
 
         {/* MEV Protection Info */}
-        {mevProtection && useContractSwap && (
+        {mevProtection && (
           <div className="p-3 rounded-lg bg-shield-cyan/5 border border-shield-cyan/20">
             <div className="flex items-center gap-2 mb-2">
               <Shield className="w-4 h-4 text-shield-cyan" />
               <span className="text-sm font-medium text-shield-cyan">
-                {chainType === "solana" ? "Contract Protection Active" : "MEV Protection Active"}
+                {chainType === 'solana' ? 'Jupiter Protection' : 'MEV Protection Active'}
               </span>
             </div>
             <p className="text-xs text-muted-foreground">
-              {chainType === "solana"
-                ? "Your swap will use commit-reveal protocol to prevent front-running and MEV attacks."
-                : "Your swap will use commit-reveal protocol to prevent front-running and MEV attacks."}
+              {chainType === 'solana' 
+                ? 'Your swap will use Jupiter aggregator for best execution and protection.'
+                : 'Your swap will use commit-reveal protocol to prevent front-running and MEV attacks.'
+              }
             </p>
           </div>
         )}
 
         {/* Action Buttons */}
         <div className="space-y-2">
-          {chainType === "solana" && quote ? (
-            // Direct swap for Solana
+          {chainType === 'solana' && quote ? (
+            // Direct swap for Solana using Jupiter
             <Button
               variant="cosmic"
               className="w-full h-12 text-base font-semibold"
@@ -400,8 +384,8 @@ export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
                 "Getting Quote..."
               ) : (
                 <>
-                  {useContractSwap ? <Shield className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-                  {useContractSwap ? "Protected Swap" : "Quick Swap"}
+                  <Zap className="w-4 h-4" />
+                  Swap
                 </>
               )}
             </Button>
@@ -438,16 +422,12 @@ export const SwapForm = ({ tokens, onPreview, isConnected }: SwapFormProps) => {
           {/* Chain-specific info */}
           <div className="text-center">
             <Badge variant="outline" className="text-xs">
-              {chainType === "evm" ? "EVM Compatible" : "Solana Network"} •
-              {chainType === "solana"
-                ? useContractSwap
-                  ? " Contract Protected"
-                  : " Jupiter Powered"
-                : " MEV Protected"}
+              {chainType === 'evm' ? 'EVM Compatible' : 'Solana Network'} • 
+              {chainType === 'solana' ? ' Unikron Powered' : ' MEV Protected'}
             </Badge>
           </div>
         </div>
       </CardContent>
     </Card>
-  )
-}
+  );
+};
