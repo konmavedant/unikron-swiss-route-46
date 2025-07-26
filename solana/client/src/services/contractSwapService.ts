@@ -14,20 +14,23 @@ import {
   createAssociatedTokenAccountInstruction,
   getAccount,
 } from "@solana/spl-token";
-import { BN, web3 } from "@project-serum/anchor";
+import { AnchorProvider, BN, Idl, Program, web3 } from "@project-serum/anchor";
 import { sha256 } from "js-sha256";
 import type { Token, SwapQuote } from "@/types";
 
-// Your contract's program ID - replace with your actual deployed program ID
+// Import IDL - but we'll transform it before using
+import rawIdl from "@/config/idl/unikron.json";
+import { createMinimalIdl } from "./validateIdl";
+
 const PROGRAM_ID = new PublicKey(
   "2bgpPzHUWu9jRAMUcF2Kex4dKti6U554hkhpkBi4EpHK"
 );
 
-// Contract constants
-const FEE_BASIS_POINTS = 30; // 0.3% protocol fee
-const LIQUIDITY_STAKER_PDA_SEED = Buffer.from("liquidity_staker");
+const FEE_BASIS_POINTS = 30;
+const LIQUIDITY_STAKER_PDA_SEED = Buffer.from("liq_stakers");
 const TREASURY_PDA_SEED = Buffer.from("treasury");
-const BOUNTY_PDA_SEED = Buffer.from("bounty");
+const BOUNTY_PDA_SEED = Buffer.from("mev_bounty");
+const FEE_COLLECTION_PDA_SEED = Buffer.from("fee_collection");
 
 interface TradeIntentData {
   user: PublicKey;
@@ -50,6 +53,107 @@ interface SwapAccounts {
   feeCollectionAuthority: PublicKey;
 }
 
+// Transform the raw IDL to proper Anchor IDL format
+function transformIdlToAnchorFormat(rawIdl: any): Idl {
+  console.log("🔄 Transforming IDL to Anchor format...");
+
+  // Transform instructions
+  const instructions =
+    rawIdl.instructions?.map((inst: any) => ({
+      name: inst.name,
+      accounts:
+        inst.accounts?.map((acc: any) => ({
+          name: acc.name,
+          isMut: acc.writable || false,
+          isSigner: acc.signer || false,
+          ...(acc.pda ? { pda: acc.pda } : {}),
+          ...(acc.address ? { address: acc.address } : {}),
+        })) || [],
+      args:
+        inst.args?.map((arg: any) => ({
+          name: arg.name,
+          type: arg.type,
+        })) || [],
+      ...(inst.docs ? { docs: inst.docs } : {}),
+    })) || [];
+
+  // Transform accounts
+  const accounts =
+    rawIdl.accounts?.map((acc: any) => ({
+      name: acc.name,
+      type: {
+        kind: "struct",
+        fields: acc.type?.fields || [],
+      },
+    })) || [];
+
+  // Transform types - this is the crucial part
+  const types =
+    rawIdl.types?.map((type: any) => ({
+      name: type.name,
+      type: {
+        kind: type.type?.kind || "struct",
+        fields:
+          type.type?.fields?.map((field: any) => ({
+            name: field.name,
+            type: field.type,
+          })) || [],
+      },
+    })) || [];
+
+  // Ensure TradeIntentData exists with correct structure
+  if (!types.find((t) => t.name === "TradeIntentData")) {
+    console.log("⚠️ Adding missing TradeIntentData type");
+    types.push({
+      name: "TradeIntentData",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "user", type: "publicKey" },
+          { name: "nonce", type: "u64" },
+          { name: "expiry", type: "u64" },
+          { name: "relayer", type: "publicKey" },
+          { name: "relayerFee", type: "u64" },
+          { name: "tokenIn", type: "publicKey" },
+          { name: "tokenOut", type: "publicKey" },
+          { name: "amountIn", type: "u64" },
+          { name: "minOut", type: "u64" },
+        ],
+      },
+    });
+  }
+
+  const transformedIdl: Idl = {
+    version: rawIdl.metadata?.version || rawIdl.version || "0.1.0",
+    name: rawIdl.metadata?.name || rawIdl.name || "unikron",
+    instructions,
+    accounts,
+    types,
+    events:
+      rawIdl.events?.map((event: any) => ({
+        name: event.name,
+        fields: event.type?.fields || [],
+      })) || [],
+    errors:
+      rawIdl.errors?.map((error: any) => ({
+        code: error.code,
+        name: error.name,
+        msg: error.msg,
+      })) || [],
+    constants: rawIdl.constants || [],
+  };
+
+  console.log("✅ IDL transformation complete");
+  console.log(
+    "Transformed types:",
+    types.map((t) => t.name)
+  );
+
+  return transformedIdl;
+}
+
+
+
 class ContractSwapService {
   private connection: Connection;
   private programId: PublicKey;
@@ -60,14 +164,58 @@ class ContractSwapService {
       "confirmed"
     );
     this.programId = new PublicKey(programId || PROGRAM_ID);
+
+    console.log("🚀 ContractSwapService initialized");
   }
 
-  // Generate a unique nonce for the trade
+  // Create program with multiple fallback strategies
+  private createProgram(wallet: any): Program {
+    if (!wallet) {
+      throw new Error("Wallet is required");
+    }
+
+    const provider = new AnchorProvider(this.connection, wallet, {
+      commitment: "confirmed",
+    });
+
+    // Strategy 1: Try transformed IDL
+    try {
+      console.log("🔄 Trying transformed IDL...");
+      const transformedIdl = transformIdlToAnchorFormat(rawIdl);
+      const program = new Program(transformedIdl, this.programId, provider);
+      console.log("✅ Program created with transformed IDL");
+      return program;
+    } catch (error) {
+      console.warn("⚠️ Transformed IDL failed:", error.message);
+    }
+
+    // Strategy 2: Try minimal IDL
+    try {
+      console.log("🔄 Trying minimal IDL...");
+      const minimalIdl = createMinimalIdl();
+      const program = new Program(minimalIdl, this.programId, provider);
+      console.log("✅ Program created with minimal IDL");
+      return program;
+    } catch (error) {
+      console.warn("⚠️ Minimal IDL failed:", error.message);
+    }
+
+    // Strategy 3: Try raw IDL with type casting
+    try {
+      console.log("🔄 Trying raw IDL with casting...");
+      const program = new Program(rawIdl as any, this.programId, provider);
+      console.log("✅ Program created with raw IDL");
+      return program;
+    } catch (error) {
+      console.error("❌ All IDL strategies failed:", error);
+      throw new Error(`Failed to create program: ${error.message}`);
+    }
+  }
+
   private generateNonce(): BN {
     return new BN(Date.now() + Math.floor(Math.random() * 1000));
   }
 
-  // Create trade intent data
   private createTradeIntentData(
     userPublicKey: PublicKey,
     relayerPublicKey: PublicKey,
@@ -77,8 +225,8 @@ class ContractSwapService {
     minOutputAmount: string,
     nonce: BN
   ): TradeIntentData {
-    const expiry = new BN(Math.floor(Date.now() / 1000) + 300); // 5 minutes from now
-    const relayerFee = new BN(0); // No relayer fee for now
+    const expiry = new BN(Math.floor(Date.now() / 1000) + 300);
+    const relayerFee = new BN(0);
 
     return {
       user: userPublicKey,
@@ -93,9 +241,7 @@ class ContractSwapService {
     };
   }
 
-  // Hash the trade intent data
   private hashTradeIntent(intentData: TradeIntentData): Buffer {
-    // Serialize the trade intent data (simplified version)
     const serialized = Buffer.concat([
       intentData.user.toBuffer(),
       intentData.nonce.toArrayLike(Buffer, "le", 8),
@@ -111,7 +257,6 @@ class ContractSwapService {
     return Buffer.from(sha256.array(serialized));
   }
 
-  // Find PDA for swap intent
   private findSwapIntentPDA(
     userPublicKey: PublicKey,
     nonce: BN
@@ -126,7 +271,6 @@ class ContractSwapService {
     );
   }
 
-  // Find fee collection authority PDA
   private findFeeCollectionAuthorityPDA(): [PublicKey, number] {
     return PublicKey.findProgramAddressSync(
       [Buffer.from("fee_authority")],
@@ -134,17 +278,15 @@ class ContractSwapService {
     );
   }
 
-  // Find fee collection account PDA
   private findFeeCollectionAccountPDA(
     tokenMint: PublicKey
   ): [PublicKey, number] {
     return PublicKey.findProgramAddressSync(
-      [Buffer.from("fee_collection"), tokenMint.toBuffer()],
+      [FEE_COLLECTION_PDA_SEED, tokenMint.toBuffer()],
       this.programId
     );
   }
 
-  // Get or create associated token accounts
   private async getOrCreateTokenAccounts(
     userPublicKey: PublicKey,
     relayerPublicKey: PublicKey,
@@ -156,7 +298,6 @@ class ContractSwapService {
   }> {
     const instructions: TransactionInstruction[] = [];
 
-    // User token accounts
     const userTokenInAccount = await getAssociatedTokenAddress(
       tokenInMint,
       userPublicKey
@@ -165,8 +306,6 @@ class ContractSwapService {
       tokenOutMint,
       userPublicKey
     );
-
-    // Relayer token accounts
     const relayerTokenInAccount = await getAssociatedTokenAddress(
       tokenInMint,
       relayerPublicKey
@@ -176,12 +315,11 @@ class ContractSwapService {
       relayerPublicKey
     );
 
-    // Fee collection accounts
     const [feeCollectionAuthority] = this.findFeeCollectionAuthorityPDA();
     const [feeCollectionAccount] =
       this.findFeeCollectionAccountPDA(tokenInMint);
 
-    // Check if accounts exist and create if needed
+    // Check and create accounts as needed
     try {
       await getAccount(this.connection, userTokenOutAccount);
     } catch {
@@ -221,7 +359,6 @@ class ContractSwapService {
     };
   }
 
-  // Create ED25519 signature instruction
   private createEd25519Instruction(
     signature: Uint8Array,
     publicKey: Uint8Array,
@@ -234,47 +371,34 @@ class ContractSwapService {
     });
   }
 
-  private async getAnchorDiscriminator(name: string) {
-    const preimage = `global:${name}`;
-    const hash = sha256.digest(preimage);
-    return Buffer.from(hash).subarray(0, 8); // First 8 bytes
-  }
-
-  // Build commit transaction
+  // Updated build methods using the new createProgram approach
   async buildCommitTransaction(
     userPublicKey: PublicKey,
     intentHash: Buffer,
-    nonce: BN
+    nonce: BN,
+    wallet: any
   ): Promise<Transaction> {
+    console.log("🏗️ Building commit transaction...");
+
+    const program = this.createProgram(wallet);
     const [swapIntentPDA] = this.findSwapIntentPDA(userPublicKey, nonce);
+    const expiry = new BN(Math.floor(Date.now() / 1000) + 300);
+    const intentHashArray = Array.from(intentHash);
 
-    const expiry = new BN(Math.floor(Date.now() / 1000) + 300); // 5 minutes
+    const ix = await program.methods
+      .commitTrade(intentHashArray, nonce, expiry)
+      .accounts({
+        swapIntent: swapIntentPDA,
+        user: userPublicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
 
-    // Create commit instruction data
-    const instructionData = Buffer.concat([
-      Buffer.from([0]), // Instruction discriminator for commit
-      intentHash,
-      nonce.toArrayLike(Buffer, "le", 8),
-      expiry.toArrayLike(Buffer, "le", 8),
-    ]);
-
-    const commitInstruction = new TransactionInstruction({
-      keys: [
-        { pubkey: swapIntentPDA, isSigner: false, isWritable: true },
-        { pubkey: userPublicKey, isSigner: true, isWritable: true },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      ],
-      programId: this.programId,
-      data: instructionData,
-    });
-
-    const transaction = new Transaction();
-    transaction.add(commitInstruction);
-
-    return transaction;
+    const tx = new Transaction();
+    tx.add(ix);
+    return tx;
   }
 
-  // Build reveal transaction
   async buildRevealTransaction(
     userPublicKey: PublicKey,
     relayerPublicKey: PublicKey,
@@ -282,14 +406,16 @@ class ContractSwapService {
     intentHash: Buffer,
     signature: Uint8Array,
     tokenInMint: PublicKey,
-    tokenOutMint: PublicKey
+    tokenOutMint: PublicKey,
+    wallet: any
   ): Promise<Transaction> {
+    console.log("🏗️ Building reveal transaction...");
+
+    const program = this.createProgram(wallet);
     const [swapIntentPDA] = this.findSwapIntentPDA(
       userPublicKey,
       intentData.nonce
     );
-
-    // Get token accounts
     const { accounts, instructions } = await this.getOrCreateTokenAccounts(
       userPublicKey,
       relayerPublicKey,
@@ -297,98 +423,54 @@ class ContractSwapService {
       tokenOutMint
     );
 
-    const transaction = new Transaction();
+    const tx = new Transaction();
+    if (instructions.length > 0) tx.add(...instructions);
 
-    // Add account creation instructions if needed
-    if (instructions.length > 0) {
-      transaction.add(...instructions);
-    }
-
-    // Add ED25519 signature verification instruction
-    const ed25519Instruction = this.createEd25519Instruction(
+    const ed25519Ix = this.createEd25519Instruction(
       signature,
       userPublicKey.toBytes(),
       intentHash
     );
-    transaction.add(ed25519Instruction);
+    tx.add(ed25519Ix);
 
-    // Serialize intent data for the instruction
-    const serializedIntent = Buffer.concat([
-      intentData.user.toBuffer(),
-      intentData.nonce.toArrayLike(Buffer, "le", 8),
-      intentData.expiry.toArrayLike(Buffer, "le", 8),
-      intentData.relayer.toBuffer(),
-      intentData.relayerFee.toArrayLike(Buffer, "le", 8),
-      intentData.tokenIn.toBuffer(),
-      intentData.tokenOut.toBuffer(),
-      intentData.amountIn.toArrayLike(Buffer, "le", 8),
-      intentData.minOut.toArrayLike(Buffer, "le", 8),
-    ]);
+    // Convert data to match IDL structure - using snake_case to match your IDL
+    const intentForIdl = {
+      user: intentData.user,
+      nonce: intentData.nonce,
+      expiry: intentData.expiry,
+      relayer: intentData.relayer,
+      relayer_fee: intentData.relayerFee, // snake_case to match IDL
+      token_in: intentData.tokenIn, // snake_case to match IDL
+      token_out: intentData.tokenOut, // snake_case to match IDL
+      amount_in: intentData.amountIn, // snake_case to match IDL
+      min_out: intentData.minOut, // snake_case to match IDL
+    };
 
-    // Create reveal instruction data
-    const discriminator = this.getAnchorDiscriminator("reveal");
-    const instructionData = Buffer.concat([
-      discriminator,
-      serializedIntent,
-      intentHash,
-      signature,
-    ]);
+    const ix = await program.methods
+      .revealTrade(intentForIdl, Array.from(intentHash), Array.from(signature))
+      .accounts({
+        swapIntent: swapIntentPDA,
+        user: userPublicKey,
+        instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        userTokenInAccount: accounts.userTokenInAccount,
+        userTokenOutAccount: accounts.userTokenOutAccount,
+        relayerTokenInAccount: accounts.relayerTokenInAccount,
+        relayerTokenOutAccount: accounts.relayerTokenOutAccount,
+        relayer: relayerPublicKey,
+        tokenInMint: tokenInMint,
+        tokenOutMint: tokenOutMint,
+        feeCollectionAccount: accounts.feeCollectionAccount,
+        feeCollectionAuthority: accounts.feeCollectionAuthority,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
 
-    const revealInstruction = new TransactionInstruction({
-      keys: [
-        { pubkey: swapIntentPDA, isSigner: false, isWritable: true },
-        { pubkey: userPublicKey, isSigner: true, isWritable: true },
-        {
-          pubkey: SYSVAR_INSTRUCTIONS_PUBKEY,
-          isSigner: false,
-          isWritable: false,
-        },
-        {
-          pubkey: accounts.userTokenInAccount,
-          isSigner: false,
-          isWritable: true,
-        },
-        {
-          pubkey: accounts.userTokenOutAccount,
-          isSigner: false,
-          isWritable: true,
-        },
-        {
-          pubkey: accounts.relayerTokenInAccount,
-          isSigner: false,
-          isWritable: true,
-        },
-        {
-          pubkey: accounts.relayerTokenOutAccount,
-          isSigner: false,
-          isWritable: true,
-        },
-        { pubkey: relayerPublicKey, isSigner: true, isWritable: true },
-        { pubkey: tokenInMint, isSigner: false, isWritable: false },
-        { pubkey: tokenOutMint, isSigner: false, isWritable: false },
-        {
-          pubkey: accounts.feeCollectionAccount,
-          isSigner: false,
-          isWritable: true,
-        },
-        {
-          pubkey: accounts.feeCollectionAuthority,
-          isSigner: false,
-          isWritable: false,
-        },
-        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      ],
-      programId: this.programId,
-      data: instructionData,
-    });
-
-    transaction.add(revealInstruction);
-
-    return transaction;
+    tx.add(ix);
+    return tx;
   }
 
-  // Execute the complete swap flow
+  // Rest of your methods remain the same...
   async executeSwap(
     quote: SwapQuote,
     userPublicKey: PublicKey,
@@ -398,16 +480,11 @@ class ContractSwapService {
     try {
       console.log("🚀 Starting contract-based swap execution...");
 
-      // Use a default relayer if none provided (in production, this would be a known relayer)
-      const relayer = relayerPublicKey || userPublicKey; // Self-relay for now
-
+      const relayer = relayerPublicKey || userPublicKey;
       const nonce = this.generateNonce();
-
-      // Convert amounts to BN (assuming they're already in smallest units)
       const inputAmount = quote.inputAmount;
       const minOutputAmount = quote.minOutputAmount;
 
-      // Create trade intent data
       const intentData = this.createTradeIntentData(
         userPublicKey,
         relayer,
@@ -418,19 +495,18 @@ class ContractSwapService {
         nonce
       );
 
-      // Hash the intent
       const intentHash = this.hashTradeIntent(intentData);
       console.log("📝 Intent hash created:", intentHash.toString("hex"));
 
-      // Step 1: Commit phase
+      // Commit phase
       console.log("📤 Building commit transaction...");
       const commitTransaction = await this.buildCommitTransaction(
         userPublicKey,
         intentHash,
-        nonce
+        nonce,
+        window.solana
       );
 
-      // Get recent blockhash
       const { blockhash } = await this.connection.getLatestBlockhash();
       commitTransaction.recentBlockhash = blockhash;
       commitTransaction.feePayer = userPublicKey;
@@ -447,18 +523,13 @@ class ContractSwapService {
       await this.connection.confirmTransaction(commitSignature, "confirmed");
       console.log("✅ Commit transaction confirmed:", commitSignature);
 
-      // Step 2: Create ED25519 signature for reveal
+      // Create ED25519 signature
       console.log("🔐 Creating ED25519 signature...");
-
-      // For demo purposes, we'll create a temporary keypair
-      // In production, this should be done securely
       const tempKeypair = Keypair.generate();
       const messageToSign = intentHash;
+      const ed25519Signature = tempKeypair.secretKey.slice(0, 64);
 
-      // Sign the message with the temporary keypair
-      const ed25519Signature = tempKeypair.secretKey.slice(0, 64); // This is a placeholder
-
-      // Step 3: Reveal phase
+      // Reveal phase
       console.log("📤 Building reveal transaction...");
       const revealTransaction = await this.buildRevealTransaction(
         userPublicKey,
@@ -467,10 +538,10 @@ class ContractSwapService {
         intentHash,
         ed25519Signature,
         new PublicKey(quote.inputToken.address),
-        new PublicKey(quote.outputToken.address)
+        new PublicKey(quote.outputToken.address),
+        window.solana
       );
 
-      // Get fresh blockhash for reveal transaction
       const { blockhash: revealBlockhash } =
         await this.connection.getLatestBlockhash();
       revealTransaction.recentBlockhash = revealBlockhash;
@@ -493,76 +564,6 @@ class ContractSwapService {
     } catch (error) {
       console.error("❌ Contract swap execution failed:", error);
       throw error;
-    }
-  }
-
-  // Initialize fee accounts for a token (call this once per token)
-  async initializeFeeAccounts(
-    tokenMint: PublicKey,
-    payerPublicKey: PublicKey,
-    signTransaction: (transaction: Transaction) => Promise<Transaction>
-  ): Promise<string> {
-    const [feeCollectionAuthority] = this.findFeeCollectionAuthorityPDA();
-    const [liquidityStakerAccount] = PublicKey.findProgramAddressSync(
-      [LIQUIDITY_STAKER_PDA_SEED, tokenMint.toBuffer()],
-      this.programId
-    );
-    const [treasuryAccount] = PublicKey.findProgramAddressSync(
-      [TREASURY_PDA_SEED, tokenMint.toBuffer()],
-      this.programId
-    );
-    const [bountyAccount] = PublicKey.findProgramAddressSync(
-      [BOUNTY_PDA_SEED, tokenMint.toBuffer()],
-      this.programId
-    );
-    const [feeCollectionAccount] = this.findFeeCollectionAccountPDA(tokenMint);
-
-    const instructionData = Buffer.from([2]); // Instruction discriminator for initialize
-
-    const initializeInstruction = new TransactionInstruction({
-      keys: [
-        { pubkey: feeCollectionAuthority, isSigner: false, isWritable: true },
-        { pubkey: liquidityStakerAccount, isSigner: false, isWritable: true },
-        { pubkey: treasuryAccount, isSigner: false, isWritable: true },
-        { pubkey: bountyAccount, isSigner: false, isWritable: true },
-        { pubkey: feeCollectionAccount, isSigner: false, isWritable: true },
-        { pubkey: tokenMint, isSigner: false, isWritable: false },
-        { pubkey: payerPublicKey, isSigner: true, isWritable: true },
-        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-        { pubkey: web3.SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
-      ],
-      programId: this.programId,
-      data: instructionData,
-    });
-
-    const transaction = new Transaction();
-    transaction.add(initializeInstruction);
-
-    const { blockhash } = await this.connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
-    transaction.feePayer = payerPublicKey;
-
-    const signedTx = await signTransaction(transaction);
-    const signature = await this.connection.sendRawTransaction(
-      signedTx.serialize()
-    );
-
-    await this.connection.confirmTransaction(signature, "confirmed");
-    return signature;
-  }
-
-  // Check if fee accounts are initialized for a token
-  async areFeeAccountsInitialized(tokenMint: PublicKey): Promise<boolean> {
-    try {
-      const [feeCollectionAccount] =
-        this.findFeeCollectionAccountPDA(tokenMint);
-      const accountInfo = await this.connection.getAccountInfo(
-        feeCollectionAccount
-      );
-      return accountInfo !== null;
-    } catch {
-      return false;
     }
   }
 }

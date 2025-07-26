@@ -1,0 +1,935 @@
+{
+  "address": "2bgpPzHUWu9jRAMUcF2Kex4dKti6U554hkhpkBi4EpHK",
+  "metadata": {
+    "name": "unikron",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "commit_trade",
+      "docs": [
+        "Commit a trade intent hash to the blockchain"
+      ],
+      "discriminator": [
+        225,
+        172,
+        49,
+        43,
+        30,
+        198,
+        216,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "swap_intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "intent_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "nonce",
+          "type": "u64"
+        },
+        {
+          "name": "expiry",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize_fee_accounts",
+      "docs": [
+        "Initialize fee accounts for a specific token mint"
+      ],
+      "discriminator": [
+        233,
+        63,
+        142,
+        11,
+        168,
+        28,
+        143,
+        222
+      ],
+      "accounts": [
+        {
+          "name": "fee_collection_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "liquidity_staker_account",
+          "docs": [
+            "Initialize liquidity stakers fee account"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  113,
+                  95,
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  114,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury_account",
+          "docs": [
+            "Initialize treasury fee account"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bounty_account",
+          "docs": [
+            "Initialize MEV bounty fee account"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  118,
+                  95,
+                  98,
+                  111,
+                  117,
+                  110,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_collection_account",
+          "docs": [
+            "Initialize fee collection account"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  99,
+                  111,
+                  108,
+                  108,
+                  101,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "The token mint for the fee accounts"
+          ]
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Payer for account creation"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "reveal_trade",
+      "docs": [
+        "Reveal and execute a committed trade"
+      ],
+      "discriminator": [
+        72,
+        86,
+        206,
+        182,
+        223,
+        187,
+        228,
+        226
+      ],
+      "accounts": [
+        {
+          "name": "swap_intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "swap_intent.nonce",
+                "account": "SwapIntent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "swap_intent"
+          ]
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "user_token_in_account",
+          "writable": true
+        },
+        {
+          "name": "user_token_out_account",
+          "writable": true
+        },
+        {
+          "name": "relayer_token_in_account",
+          "writable": true
+        },
+        {
+          "name": "relayer_token_out_account",
+          "writable": true
+        },
+        {
+          "name": "relayer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_in_mint"
+        },
+        {
+          "name": "token_out_mint"
+        },
+        {
+          "name": "fee_collection_account",
+          "writable": true
+        },
+        {
+          "name": "fee_collection_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "intent",
+          "type": {
+            "defined": {
+              "name": "TradeIntentData"
+            }
+          }
+        },
+        {
+          "name": "expected_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "signature",
+          "type": {
+            "array": [
+              "u8",
+              64
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "settle_trade",
+      "docs": [
+        "Distribute collected fees to different pools"
+      ],
+      "discriminator": [
+        252,
+        176,
+        98,
+        248,
+        73,
+        123,
+        8,
+        157
+      ],
+      "accounts": [
+        {
+          "name": "fee_collection_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "source_fee_account",
+          "docs": [
+            "The token account that holds collected protocol fees"
+          ],
+          "writable": true
+        },
+        {
+          "name": "liquidity_staker_account",
+          "docs": [
+            "Token account for liquidity stakers (50% of fees)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  113,
+                  95,
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  114,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "source_fee_account.mint",
+                "account": "TokenAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury_account",
+          "docs": [
+            "Token account for protocol treasury (30% of fees)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "source_fee_account.mint",
+                "account": "TokenAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bounty_account",
+          "docs": [
+            "Token account for MEV bounty pool (20% of fees)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  118,
+                  95,
+                  98,
+                  111,
+                  117,
+                  110,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "source_fee_account.mint",
+                "account": "TokenAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "The token mint for the fees being distributed"
+          ]
+        },
+        {
+          "name": "caller",
+          "docs": [
+            "Relayer or authorized caller who triggers fee distribution"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "SwapIntent",
+      "discriminator": [
+        242,
+        212,
+        249,
+        216,
+        109,
+        94,
+        238,
+        134
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "FeeAccountsInitialized",
+      "discriminator": [
+        24,
+        244,
+        176,
+        43,
+        165,
+        149,
+        67,
+        124
+      ]
+    },
+    {
+      "name": "FeeDistributed",
+      "discriminator": [
+        6,
+        133,
+        116,
+        50,
+        44,
+        151,
+        179,
+        65
+      ]
+    },
+    {
+      "name": "TradeExecuted",
+      "discriminator": [
+        41,
+        110,
+        64,
+        129,
+        60,
+        79,
+        179,
+        80
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "AlreadyRevealed",
+      "msg": "Intent already revealed"
+    },
+    {
+      "code": 6001,
+      "name": "IntentExpired",
+      "msg": "Trade intent expired"
+    },
+    {
+      "code": 6002,
+      "name": "NonceMismatch",
+      "msg": "Nonce does not match"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidSignature",
+      "msg": "Signature verification failed"
+    },
+    {
+      "code": 6004,
+      "name": "HashMismatch",
+      "msg": "Hash mismatch between reveal and commit"
+    },
+    {
+      "code": 6005,
+      "name": "InsufficientBalance",
+      "msg": "Insufficient token balance"
+    },
+    {
+      "code": 6006,
+      "name": "MathOverflow",
+      "msg": "Mathematical overflow occurred"
+    },
+    {
+      "code": 6007,
+      "name": "SlippageExceeded",
+      "msg": "Slippage tolerance exceeded"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidTokenMint",
+      "msg": "Invalid token mint"
+    },
+    {
+      "code": 6009,
+      "name": "RelayerFeeTooHigh",
+      "msg": "Relayer fee too high"
+    },
+    {
+      "code": 6010,
+      "name": "ProtocolFeeError",
+      "msg": "Protocol fee calculation failed"
+    },
+    {
+      "code": 6011,
+      "name": "FeeDistributionError",
+      "msg": "Fee distribution failed"
+    },
+    {
+      "code": 6012,
+      "name": "SwapExecutionFailed",
+      "msg": "Swap execution failed"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidRelayer",
+      "msg": "Invalid relayer"
+    },
+    {
+      "code": 6014,
+      "name": "AmountTooSmall",
+      "msg": "Trade amount too small"
+    },
+    {
+      "code": 6015,
+      "name": "AmountTooLarge",
+      "msg": "Trade amount too large"
+    }
+  ],
+  "types": [
+    {
+      "name": "FeeAccountsInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidity_stakers",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "mev_bounty",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_collection",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeeDistributed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_fee",
+            "type": "u64"
+          },
+          {
+            "name": "liquidity_stakers_fee",
+            "type": "u64"
+          },
+          {
+            "name": "treasury_fee",
+            "type": "u64"
+          },
+          {
+            "name": "mev_bounty_fee",
+            "type": "u64"
+          },
+          {
+            "name": "caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SwapIntent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "intent_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "expiry",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "revealed",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradeExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "relayer",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_in",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_out",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_in",
+            "type": "u64"
+          },
+          {
+            "name": "amount_out",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee",
+            "type": "u64"
+          },
+          {
+            "name": "relayer_fee",
+            "type": "u64"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradeIntentData",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "expiry",
+            "type": "u64"
+          },
+          {
+            "name": "relayer",
+            "type": "pubkey"
+          },
+          {
+            "name": "relayer_fee",
+            "type": "u64"
+          },
+          {
+            "name": "token_in",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_out",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_in",
+            "type": "u64"
+          },
+          {
+            "name": "min_out",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

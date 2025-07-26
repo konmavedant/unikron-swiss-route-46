@@ -75,8 +75,8 @@ export const useContractSwap = (): UseContractSwapReturn => {
         const inputTokenMint = new PublicKey(quote.inputToken.address)
         const outputTokenMint = new PublicKey(quote.outputToken.address)
 
-        const inputFeeAccountsInitialized = await contractSwapService.areFeeAccountsInitialized(inputTokenMint)
-        const outputFeeAccountsInitialized = await contractSwapService.areFeeAccountsInitialized(outputTokenMint)
+        // const inputFeeAccountsInitialized = await contractSwapService.areFeeAccountsInitialized(inputTokenMint)
+        // const outputFeeAccountsInitialized = await contractSwapService.areFeeAccountsInitialized(outputTokenMint)
 
         // Initialize fee accounts if needed
         // if (!inputFeeAccountsInitialized) {
